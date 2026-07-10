@@ -12,6 +12,7 @@ const {
 
 const {
     createCompany,
+    getAllCompanies,
 } = require("../controllers/company.controller");
 
 
@@ -44,7 +45,7 @@ router.post(
             .notEmpty()
             .withMessage("Company email is required.")
             .isEmail()
-            .withMessage("Please enter a valid company email."),
+            .withMessage("Please enter a valid email address."),
 
         body("phone")
             .optional({ checkFalsy: true })
@@ -56,12 +57,26 @@ router.post(
             .isLength({ max: 500 })
             .withMessage("Address cannot exceed 500 characters."),
 
-        body("logo")
+        body("logo_url")
             .optional({ checkFalsy: true })
             .isURL()
             .withMessage("Logo URL must be a valid URL."),
     ],
     createCompany
 );
+
+
+/**
+ * ==========================================================
+ * Get All Companies
+ * GET /api/v1/company
+ * ==========================================================
+ */
+router.get(
+    "/",
+    authenticate,
+    getAllCompanies
+);
+
 
 module.exports = router;

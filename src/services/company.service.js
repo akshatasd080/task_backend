@@ -114,7 +114,39 @@ const createCompanyService = async (
 
 };
 
+/**
+ * ==========================================================
+ * Get All Companies Service
+ * ==========================================================
+ */
+const getAllCompaniesService = async () => {
+
+    const result = await pool.query(
+        `
+        SELECT
+            id,
+            company_name,
+            company_code,
+            email,
+            phone,
+            address,
+            logo_url,
+            is_active,
+            created_by,
+            updated_by,
+            created_at,
+            updated_at
+        FROM task_management.companies
+        WHERE deleted_at IS NULL
+        ORDER BY id ASC
+        `
+    );
+
+    return result.rows;
+
+};
 
 module.exports = {
     createCompanyService,
+    getAllCompaniesService,
 };

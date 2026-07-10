@@ -2,6 +2,7 @@ const { validationResult } = require("express-validator");
 
 const {
     createCompanyService,
+    getAllCompaniesService,
 } = require("../services/company.service");
 
 const {
@@ -36,9 +37,9 @@ const createCompany = async (req, res) => {
         }
 
         const result = await createCompanyService(
-         req.body,
-         req.user.id
-);
+            req.body,
+            req.user.id
+        );
 
         return successResponse(
             res,
@@ -65,6 +66,43 @@ const createCompany = async (req, res) => {
 };
 
 
+/**
+ * ==========================================================
+ * Get All Companies
+ * ==========================================================
+ */
+const getAllCompanies = async (req, res) => {
+
+    try {
+
+        const companies = await getAllCompaniesService();
+
+        return successResponse(
+            res,
+            "Companies fetched successfully.",
+            companies,
+            200
+        );
+
+    } catch (error) {
+
+        console.error("====================================");
+        console.error("GET ALL COMPANIES ERROR");
+        console.error(error.message);
+        console.error("====================================");
+
+        return errorResponse(
+            res,
+            error.message,
+            500
+        );
+
+    }
+
+};
+
+
 module.exports = {
     createCompany,
+    getAllCompanies,
 };
