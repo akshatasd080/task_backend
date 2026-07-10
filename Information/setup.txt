@@ -1,0 +1,42 @@
+-- 1️⃣ Connect as superuser
+psql -U postgres -h localhost -p 5432
+
+
+-- 2️⃣ Create the user (role)
+
+CREATE USER task_user WITH PASSWORD 'Task@123';
+
+
+-- 3️⃣ Create the database
+CREATE DATABASE task_management_db;
+
+
+-- 4 Connect to the database
+\c task_management
+
+-- 5️⃣ Connect to the database
+CREATE SCHEMA IF NOT EXISTS task_management
+AUTHORIZATION task_user;
+
+STEP 6 : Grant Permissions
+
+GRANT ALL PRIVILEGES
+ON DATABASE task_management
+TO task_user;
+
+GRANT ALL
+ON SCHEMA task_management
+TO task_user;
+
+ALTER DEFAULT PRIVILEGES
+IN SCHEMA task_management
+GRANT ALL ON TABLES TO task_user;
+
+ALTER DEFAULT PRIVILEGES
+IN SCHEMA task_management
+GRANT ALL ON SEQUENCES TO task_user;
+
+STEP 7 : Verify
+SELECT current_database();
+
+SELECT current_schema();
