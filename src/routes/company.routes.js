@@ -16,8 +16,8 @@ const {
     getCompanyById,
     updateCompany,
     updateCompanyStatus,
+    deleteCompany,
 } = require("../controllers/company.controller");
-
 
 
 /**
@@ -70,7 +70,6 @@ router.post(
 );
 
 
-
 /**
  * ==========================================================
  * Get All Companies
@@ -84,7 +83,6 @@ router.get(
 );
 
 
-
 /**
  * ==========================================================
  * Get Company By ID
@@ -96,7 +94,6 @@ router.get(
     authenticate,
     getCompanyById
 );
-
 
 
 /**
@@ -149,7 +146,6 @@ router.put(
 );
 
 
-
 /**
  * ==========================================================
  * Activate / Deactivate Company
@@ -169,6 +165,18 @@ router.patch(
     updateCompanyStatus
 );
 
+
+/**
+ * ==========================================================
+ * Delete Company (Soft Delete)
+ * DELETE /api/v1/company/:id
+ * ==========================================================
+ */
+router.delete(
+    "/:id",
+    authenticate,
+    deleteCompany
+);
 
 
 module.exports = router;

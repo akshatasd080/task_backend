@@ -114,6 +114,7 @@ const createCompanyService = async (
 
 };
 
+
 /**
  * ==========================================================
  * Get All Companies Service
@@ -183,6 +184,7 @@ const getCompanyByIdService = async (companyId) => {
     return result.rows[0];
 
 };
+
 
 /**
  * ==========================================================
@@ -336,18 +338,12 @@ const updateCompanyStatusService = async (
         WHERE id = $1
         AND deleted_at IS NULL
         `,
-        [
-            companyId
-        ]
+        [companyId]
     );
 
-
     if (companyResult.rows.length === 0) {
-
         throw new Error("Company not found.");
-
     }
-
 
     // ======================================================
     // Update Status
@@ -383,11 +379,76 @@ const updateCompanyStatusService = async (
         ]
     );
 
-
     return result.rows[0];
 
 };
 
+
+/**
+ * ==========================================================
+ * Delete Company Service (Soft Delete)
+ * ==========================================================
+ */
+const deleteCompanyService = async (
+    companyId,
+    loggedInUserId
+) => {
+
+    // ======================================================
+    // Check Company Exists
+    // ======================================================
+
+    const companyResult = await pool.query(
+        `
+        SELECT id
+        FROM task_management.companies
+        WHERE id = $1
+        AND deleted_at IS NULL
+        `,
+        [companyId]
+    );
+
+    if (companyResult.rows.length === 0) {
+        throw new Error("Company not found.");
+    }
+
+    // ======================================================
+    // Soft Delete Company
+    // ======================================================
+
+    const result = await pool.query(
+        `
+        UPDATE task_management.companies
+        SET
+            deleted_at = CURRENT_TIMESTAMP,
+            updated_by = $2,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+
+        RETURNING
+            id,
+            company_name,
+            company_code,
+            email,
+            phone,
+            address,
+            logo_url,
+            is_active,
+            deleted_at,
+            created_by,
+            updated_by,
+            created_at,
+            updated_at
+        `,
+        [
+            companyId,
+            loggedInUserId
+        ]
+    );
+
+    return result.rows[0];
+
+};
 
 
 module.exports = {
@@ -396,5 +457,5 @@ module.exports = {
     getCompanyByIdService,
     updateCompanyService,
     updateCompanyStatusService,
+    deleteCompanyService,
 };
-

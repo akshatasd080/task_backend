@@ -6,6 +6,7 @@ const {
     getCompanyByIdService,
     updateCompanyService,
     updateCompanyStatusService,
+    deleteCompanyService,
 } = require("../services/company.service");
 
 const {
@@ -103,6 +104,7 @@ const getAllCompanies = async (req, res) => {
     }
 
 };
+
 
 /**
  * ==========================================================
@@ -213,7 +215,6 @@ const updateCompanyStatus = async (req, res) => {
 
         const { is_active } = req.body;
 
-
         // ==================================================
         // Validate Status
         // ==================================================
@@ -228,13 +229,11 @@ const updateCompanyStatus = async (req, res) => {
 
         }
 
-
         const result = await updateCompanyStatusService(
             id,
             is_active,
             req.user.id
         );
-
 
         return successResponse(
             res,
@@ -243,14 +242,12 @@ const updateCompanyStatus = async (req, res) => {
             200
         );
 
-
     } catch (error) {
 
         console.error("====================================");
         console.error("UPDATE COMPANY STATUS ERROR");
         console.error(error.message);
         console.error("====================================");
-
 
         return errorResponse(
             res,
@@ -262,11 +259,53 @@ const updateCompanyStatus = async (req, res) => {
 
 };
 
+
+/**
+ * ==========================================================
+ * Delete Company (Soft Delete)
+ * ==========================================================
+ */
+const deleteCompany = async (req, res) => {
+
+    try {
+
+        const { id } = req.params;
+
+        const result = await deleteCompanyService(
+            id,
+            req.user.id
+        );
+
+        return successResponse(
+            res,
+            "Company deleted successfully.",
+            result,
+            200
+        );
+
+    } catch (error) {
+
+        console.error("====================================");
+        console.error("DELETE COMPANY ERROR");
+        console.error(error.message);
+        console.error("====================================");
+
+        return errorResponse(
+            res,
+            error.message,
+            400
+        );
+
+    }
+
+};
+
+
 module.exports = {
     createCompany,
     getAllCompanies,
     getCompanyById,
     updateCompany,
     updateCompanyStatus,
+    deleteCompany,
 };
-

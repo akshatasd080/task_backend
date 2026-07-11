@@ -40,3 +40,5 @@ STEP 7 : Verify
 SELECT current_database();
 
 SELECT current_schema();
+
+
