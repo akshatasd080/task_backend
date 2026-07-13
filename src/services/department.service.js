@@ -141,7 +141,19 @@ const createDepartmentService = async (
  * Get All Departments Service
  * ==========================================================
  */
-const getAllDepartmentsService = async () => {
+const getAllDepartmentsService = async (queryParams) => {
+
+    const {
+        page = 1,
+        limit = 10,
+        search = "",
+        company_id,
+        is_active,
+        sort_by = "id",
+        sort_order = "ASC",
+    } = queryParams;
+
+    const offset = (Number(page) - 1) * Number(limit);
 
     const result = await pool.query(
         `
@@ -158,7 +170,9 @@ const getAllDepartmentsService = async () => {
             updated_at
         FROM task_management.departments
         WHERE deleted_at IS NULL
-        ORDER BY id ASC
+       ORDER BY id ASC
+       LIMIT $1
+       OFFSET $2
         `
     );
 

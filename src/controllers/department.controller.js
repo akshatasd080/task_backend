@@ -79,7 +79,7 @@ const getAllDepartments = async (req, res) => {
 
     try {
 
-        const departments = await getAllDepartmentsService();
+        const departments = await getAllDepartmentsService(req.query);
 
         return successResponse(
             res,
@@ -309,3 +309,4 @@ module.exports = {
     updateDepartmentStatus,
     deleteDepartment,
 };
+
