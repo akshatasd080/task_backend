@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
+const path = require("path");
 
 // =======================================
 // Routes
@@ -10,7 +11,12 @@ const morgan = require("morgan");
 const authRoutes = require("./routes/auth.routes");
 const companyRoutes = require("./routes/company.routes");
 const departmentRoutes = require("./routes/department.routes");
+const userRoutes = require("./routes/user.routes");
+const roleRoutes = require("./routes/role.routes");
+const projectRoutes = require("./routes/project.routes");
 const taskRoutes = require("./routes/task.routes");
+const notificationRoutes = require("./routes/notification.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
 
 const app = express();
 
@@ -26,6 +32,16 @@ app.use(cors());
 app.use(helmet());
 
 app.use(morgan("dev"));
+
+
+// =======================================
+// Static Uploads
+// =======================================
+
+app.use(
+    "/uploads",
+    express.static(path.join(__dirname, "../uploads"))
+);
 
 
 // =======================================
@@ -52,7 +68,17 @@ app.use("/api/v1/company", companyRoutes);
 
 app.use("/api/v1/department", departmentRoutes);
 
+app.use("/api/v1/users", userRoutes);
+
+app.use("/api/v1/roles", roleRoutes);
+
+app.use("/api/v1/projects", projectRoutes);
+
 app.use("/api/v1/tasks", taskRoutes);
+
+app.use("/api/v1/notifications", notificationRoutes);
+
+app.use("/api/v1/dashboard", dashboardRoutes);
 
 
 // =======================================

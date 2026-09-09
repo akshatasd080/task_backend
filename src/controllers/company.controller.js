@@ -117,7 +117,7 @@ const getCompanyById = async (req, res) => {
 
         const { id } = req.params;
 
-        const company = await getCompanyByIdService(id);
+        const company = await getCompanyByIdService(id, req.user);
 
         return successResponse(
             res,
@@ -174,7 +174,8 @@ const updateCompany = async (req, res) => {
         const result = await updateCompanyService(
             id,
             req.body,
-            req.user.id
+            req.user.id,
+            req.user
         );
 
         return successResponse(

@@ -1,117 +1,42 @@
-const pool = require("../config/db");
+-- =====================================================
+-- File: 02_companies.sql
+-- Description: Companies (tenants) table
+-- =====================================================
 
+CREATE TABLE IF NOT EXISTS task_management.companies (
 
-/**
- * ==========================================================
- * Create Company Service
- * ==========================================================
- */
-const createCompanyService = async (companyData) => {
+    id BIGSERIAL PRIMARY KEY,
 
-    const {
-        company_name,
-        company_code,
-        email,
-        phone,
-        address,
-        logo_url,
-    } = companyData;
+    company_name VARCHAR(150) NOT NULL,
 
-    // ======================================================
-    // Check Company Code
-    // ======================================================
+    company_code VARCHAR(20) NOT NULL,
 
-    const companyCodeResult = await pool.query(
-        `
-        SELECT id
-        FROM task_management.companies
-        WHERE company_code = $1
-        AND deleted_at IS NULL
-        `,
-        [company_code]
-    );
+    email VARCHAR(150) NOT NULL,
 
-    if (companyCodeResult.rows.length > 0) {
-        throw new Error("Company code already exists.");
-    }
+    phone VARCHAR(20),
 
-    // ======================================================
-    // Check Company Email
-    // ======================================================
+    address TEXT,
 
-    const companyEmailResult = await pool.query(
-        `
-        SELECT id
-        FROM task_management.companies
-        WHERE email = $1
-        AND deleted_at IS NULL
-        `,
-        [email]
-    );
+    logo_url TEXT,
 
-    if (companyEmailResult.rows.length > 0) {
-        throw new Error("Company email already exists.");
-    }
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
 
-    // ======================================================
-    // Create Company
-    // ======================================================
+    created_by BIGINT,
 
-    const result = await pool.query(
-        `
-        INSERT INTO task_management.companies
-        (
-            company_name,
-            company_code,
-            email,
-            phone,
-            address,
-            logo_url,
-            created_by,
-            updated_by
-        )
-        VALUES
-        (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8
-        )
-        RETURNING
-            id,
-            company_name,
-            company_code,
-            email,
-            phone,
-            address,
-            logo_url,
-            is_active,
-            created_by,
-            updated_by,
-            created_at,
-            updated_at
-        `,
-        [
-            company_name,
-            company_code,
-            email,
-            phone || null,
-            address || null,
-            logo_url || null,
-            null,
-            null,
-        ]
-    );
+    updated_by BIGINT,
 
-    return result.rows[0];
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-};
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
+    deleted_at TIMESTAMP,
 
-module.exports = {
-    createCompanyService,
-};
+    CONSTRAINT uq_companies_code UNIQUE (company_code),
+
+    CONSTRAINT uq_companies_email UNIQUE (email)
+
+);
+
+CREATE INDEX IF NOT EXISTS idx_companies_active
+ON task_management.companies(is_active)
+WHERE deleted_at IS NULL;

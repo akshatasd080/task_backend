@@ -5,7 +5,9 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "db:setup": "node scripts/setupDatabase.js",
+    "seed:demo": "node scripts/seedDemoUsers.js"
   },
   "keywords": [
     "nodejs",
@@ -25,6 +27,7 @@
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.11.0",
+    "multer": "^2.3.0",
     "pg": "^8.22.0",
     "uuid": "^14.0.1"
   },

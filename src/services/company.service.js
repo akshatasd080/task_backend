@@ -153,7 +153,7 @@ const getAllCompaniesService = async () => {
  * Get Company By ID Service
  * ==========================================================
  */
-const getCompanyByIdService = async (companyId) => {
+const getCompanyByIdService = async (companyId, loggedInUser = null) => {
 
     const result = await pool.query(
         `
@@ -181,6 +181,16 @@ const getCompanyByIdService = async (companyId) => {
         throw new Error("Company not found.");
     }
 
+    if (
+        loggedInUser &&
+        loggedInUser.userType !== "SYSTEM_ADMIN" &&
+        Number(loggedInUser.companyId) !== Number(companyId)
+    ) {
+        const err = new Error("You do not have permission to access this resource.");
+        err.statusCode = 403;
+        throw err;
+    }
+
     return result.rows[0];
 
 };
@@ -194,8 +204,19 @@ const getCompanyByIdService = async (companyId) => {
 const updateCompanyService = async (
     companyId,
     companyData,
-    loggedInUserId
+    loggedInUserId,
+    loggedInUser = null
 ) => {
+
+    if (
+        loggedInUser &&
+        loggedInUser.userType !== "SYSTEM_ADMIN" &&
+        Number(loggedInUser.companyId) !== Number(companyId)
+    ) {
+        const err = new Error("You do not have permission to access this resource.");
+        err.statusCode = 403;
+        throw err;
+    }
 
     const {
         company_name,

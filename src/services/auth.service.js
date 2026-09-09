@@ -1,18 +1,54 @@
 const bcrypt = require("bcrypt");
 const pool = require("../config/db");
 const { generateToken } = require("../config/jwt");
+const { getPermissionsByRoleId } = require("../utils/helpers");
+
+const buildCompanyUserPayload = async (user) => {
+    const roleResult = await pool.query(
+        `
+        SELECT id, role_name
+        FROM task_management.roles
+        WHERE id = $1
+        `,
+        [user.role_id]
+    );
+
+    const roleName = roleResult.rows[0]?.role_name || null;
+    const permissions = await getPermissionsByRoleId(user.role_id);
+
+    const companyResult = await pool.query(
+        `
+        SELECT id, company_name, company_code
+        FROM task_management.companies
+        WHERE id = $1 AND deleted_at IS NULL
+        `,
+        [user.company_id]
+    );
+
+    const company = companyResult.rows[0] || null;
+
+    return {
+        id: user.id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        phone: user.phone,
+        profile_image: user.profile_image,
+        company_id: user.company_id,
+        role_id: user.role_id,
+        role_name: roleName,
+        permissions,
+        company,
+        userType: "COMPANY_USER",
+        is_active: user.is_active,
+        last_login: user.last_login,
+    };
+};
 
 /**
- * ==========================================================
  * Login Service
- * ==========================================================
  */
 const loginService = async (email, password) => {
-
-    // ======================================================
-    // Check System Admin
-    // ======================================================
-
     const adminResult = await pool.query(
         `
         SELECT *
@@ -24,13 +60,9 @@ const loginService = async (email, password) => {
     );
 
     if (adminResult.rows.length > 0) {
-
         const admin = adminResult.rows[0];
 
-        const isPasswordMatched = await bcrypt.compare(
-            password,
-            admin.password
-        );
+        const isPasswordMatched = await bcrypt.compare(password, admin.password);
 
         if (!isPasswordMatched) {
             throw new Error("Invalid Email or Password");
@@ -55,14 +87,16 @@ const loginService = async (email, password) => {
 
         return {
             token,
-            user: admin,
+            user: {
+                ...admin,
+                userType: "SYSTEM_ADMIN",
+                role_name: "Super Admin",
+                permissions: ["*"],
+                company_id: null,
+                company: null,
+            },
         };
-
     }
-
-    // ======================================================
-    // Check Company User
-    // ======================================================
 
     const userResult = await pool.query(
         `
@@ -70,6 +104,7 @@ const loginService = async (email, password) => {
         FROM task_management.users
         WHERE email = $1
         AND is_active = TRUE
+        AND deleted_at IS NULL
         `,
         [email]
     );
@@ -80,10 +115,7 @@ const loginService = async (email, password) => {
 
     const user = userResult.rows[0];
 
-    const isPasswordMatched = await bcrypt.compare(
-        password,
-        user.password
-    );
+    const isPasswordMatched = await bcrypt.compare(password, user.password);
 
     if (!isPasswordMatched) {
         throw new Error("Invalid Email or Password");
@@ -106,29 +138,19 @@ const loginService = async (email, password) => {
         userType: "COMPANY_USER",
     });
 
-    delete user.password;
+    const profile = await buildCompanyUserPayload(user);
 
     return {
         token,
-        user,
+        user: profile,
     };
-
 };
 
-
 /**
- * ==========================================================
  * Get Logged-in User Profile
- * ==========================================================
  */
 const getProfileService = async (loggedInUser) => {
-
-    // ======================================================
-    // System Admin Profile
-    // ======================================================
-
     if (loggedInUser.userType === "SYSTEM_ADMIN") {
-
         const result = await pool.query(
             `
             SELECT
@@ -155,31 +177,19 @@ const getProfileService = async (loggedInUser) => {
         return {
             ...result.rows[0],
             userType: "SYSTEM_ADMIN",
+            role_name: "Super Admin",
+            permissions: ["*"],
+            company_id: null,
+            company: null,
         };
-
     }
-
-    // ======================================================
-    // Company User Profile
-    // ======================================================
 
     const result = await pool.query(
         `
-        SELECT
-            id,
-            company_id,
-            role_id,
-            first_name,
-            last_name,
-            email,
-            phone,
-            profile_image,
-            is_active,
-            last_login,
-            created_at,
-            updated_at
+        SELECT *
         FROM task_management.users
         WHERE id = $1
+        AND deleted_at IS NULL
         `,
         [loggedInUser.id]
     );
@@ -188,21 +198,10 @@ const getProfileService = async (loggedInUser) => {
         throw new Error("User not found.");
     }
 
-    return {
-        ...result.rows[0],
-        userType: "COMPANY_USER",
-    };
-
+    return buildCompanyUserPayload(result.rows[0]);
 };
 
-
-/**
- * ==========================================================
- * Logout Service
- * ==========================================================
- */
 const logoutService = async (loggedInUser) => {
-
     return {
         success: true,
         message: "Logout Successful.",
@@ -211,40 +210,20 @@ const logoutService = async (loggedInUser) => {
             userType: loggedInUser.userType,
         },
     };
-
 };
 
-/**
- * ==========================================================
- * Change Password Service
- * ==========================================================
- */
 const changePasswordService = async (
     loggedInUser,
     currentPassword,
     newPassword
 ) => {
-
     let tableName = "";
-    let user = null;
-
-    // ======================================================
-    // System Admin
-    // ======================================================
 
     if (loggedInUser.userType === "SYSTEM_ADMIN") {
-
         tableName = "task_management.system_admins";
-
     } else {
-
         tableName = "task_management.users";
-
     }
-
-    // ======================================================
-    // Get User
-    // ======================================================
 
     const result = await pool.query(
         `
@@ -259,11 +238,7 @@ const changePasswordService = async (
         throw new Error("User not found.");
     }
 
-    user = result.rows[0];
-
-    // ======================================================
-    // Verify Current Password
-    // ======================================================
+    const user = result.rows[0];
 
     const isPasswordMatched = await bcrypt.compare(
         currentPassword,
@@ -274,30 +249,13 @@ const changePasswordService = async (
         throw new Error("Current password is incorrect.");
     }
 
-    // ======================================================
-    // Prevent Same Password
-    // ======================================================
-
-    const isSamePassword = await bcrypt.compare(
-        newPassword,
-        user.password
-    );
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
 
     if (isSamePassword) {
-        throw new Error(
-            "New password cannot be same as current password."
-        );
+        throw new Error("New password cannot be same as current password.");
     }
 
-    // ======================================================
-    // Hash New Password
-    // ======================================================
-
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // ======================================================
-    // Update Password
-    // ======================================================
 
     await pool.query(
         `
@@ -307,19 +265,14 @@ const changePasswordService = async (
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
         `,
-        [
-            hashedPassword,
-            loggedInUser.id,
-        ]
+        [hashedPassword, loggedInUser.id]
     );
 
     return {
         success: true,
         message: "Password changed successfully.",
     };
-
 };
-
 
 module.exports = {
     loginService,

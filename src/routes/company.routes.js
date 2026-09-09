@@ -8,7 +8,12 @@ const {
 
 const {
     authenticate,
+    authorize,
 } = require("../middleware/auth.middleware");
+
+const {
+    requirePermission,
+} = require("../middleware/permission.middleware");
 
 const {
     createCompany,
@@ -29,6 +34,7 @@ const {
 router.post(
     "/create",
     authenticate,
+    authorize("SYSTEM_ADMIN"),
     [
         body("company_name")
             .trim()
@@ -79,6 +85,7 @@ router.post(
 router.get(
     "/",
     authenticate,
+    authorize("SYSTEM_ADMIN"),
     getAllCompanies
 );
 
@@ -92,6 +99,7 @@ router.get(
 router.get(
     "/:id",
     authenticate,
+    requirePermission("company.view", "company.update", "company.manage"),
     getCompanyById
 );
 
@@ -105,6 +113,7 @@ router.get(
 router.put(
     "/:id",
     authenticate,
+    requirePermission("company.update", "company.manage"),
     [
         body("company_name")
             .trim()
@@ -155,6 +164,7 @@ router.put(
 router.patch(
     "/:id/status",
     authenticate,
+    authorize("SYSTEM_ADMIN"),
     [
         body("is_active")
             .notEmpty()
@@ -175,6 +185,7 @@ router.patch(
 router.delete(
     "/:id",
     authenticate,
+    authorize("SYSTEM_ADMIN"),
     deleteCompany
 );
 

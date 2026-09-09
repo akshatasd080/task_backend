@@ -11,12 +11,6 @@ const generateToken = (payload) => {
 
     try {
 
-        console.log("====================================");
-        console.log("GENERATING JWT TOKEN");
-        console.log("JWT Secret:", process.env.JWT_SECRET);
-        console.log("Payload:", payload);
-        console.log("Expires In:", process.env.JWT_EXPIRES_IN);
-
         const token = jwt.sign(
             payload,
             process.env.JWT_SECRET,
@@ -24,9 +18,6 @@ const generateToken = (payload) => {
                 expiresIn: process.env.JWT_EXPIRES_IN,
             }
         );
-
-        console.log("Token Generated Successfully");
-        console.log("====================================");
 
         return token;
 
@@ -52,32 +43,15 @@ const verifyToken = (token) => {
 
     try {
 
-        console.log("====================================");
-        console.log("VERIFYING JWT TOKEN");
-        console.log("JWT Secret:", process.env.JWT_SECRET);
-        console.log("Received Token:", token);
-
         const decoded = jwt.verify(
             token,
             process.env.JWT_SECRET
         );
 
-        console.log("Token Verified Successfully");
-        console.log("Decoded Payload:", decoded);
-        console.log("====================================");
-
         return decoded;
 
     } catch (error) {
-
-        console.log("====================================");
-        console.log("JWT VERIFICATION FAILED");
-        console.log("Error Name:", error.name);
-        console.log("Error Message:", error.message);
-        console.log("====================================");
-
         throw error;
-
     }
 
 };

@@ -1,156 +1,100 @@
 const { verifyToken } = require("../config/jwt");
 const { errorResponse } = require("../utils/response");
+const { getPermissionsByRoleId } = require("../utils/helpers");
+const pool = require("../config/db");
 
 /**
- * ==========================================================
  * JWT Authentication Middleware
- * ==========================================================
+ * Attaches req.user with id, email, companyId, roleId, userType, roleName, permissions
  */
-const authenticate = (req, res, next) => {
-
+const authenticate = async (req, res, next) => {
     try {
-
-        console.log("\n==========================================");
-        console.log("🔐 AUTHENTICATION MIDDLEWARE");
-        console.log("==========================================");
-
-        // Get Authorization Header
         const authHeader = req.headers.authorization;
 
-        console.log("Authorization Header:", authHeader);
-
         if (!authHeader) {
-
-            return errorResponse(
-                res,
-                "Authorization header is missing.",
-                401
-            );
-
+            return errorResponse(res, "Authorization header is missing.", 401);
         }
 
-        // Check Bearer Format
         if (!authHeader.startsWith("Bearer ")) {
-
             return errorResponse(
                 res,
                 "Authorization header must be: Bearer <token>",
                 401
             );
-
         }
 
-        // Extract Token
         const token = authHeader.replace("Bearer ", "").trim();
 
-        console.log("Received Token:");
-        console.log(token);
-
         if (!token) {
-
-            return errorResponse(
-                res,
-                "Access token is required.",
-                401
-            );
-
+            return errorResponse(res, "Access token is required.", 401);
         }
 
-        // Verify Token
         const decoded = verifyToken(token);
 
-        console.log("\n✅ TOKEN VERIFIED SUCCESSFULLY");
-        console.log(decoded);
+        req.user = {
+            id: decoded.id,
+            email: decoded.email,
+            companyId: decoded.companyId || null,
+            roleId: decoded.roleId || null,
+            userType: decoded.userType,
+            roleName: null,
+            permissions: [],
+        };
 
-        // Store user in request
-        req.user = decoded;
+        if (decoded.userType === "SYSTEM_ADMIN") {
+            req.user.roleName = "Super Admin";
+            req.user.permissions = ["*"];
+            return next();
+        }
 
-        next();
+        if (decoded.roleId) {
+            const roleResult = await pool.query(
+                `
+                SELECT role_name
+                FROM task_management.roles
+                WHERE id = $1
+                  AND deleted_at IS NULL
+                `,
+                [decoded.roleId]
+            );
 
-    } catch (error) {
-
-        console.log("\n==========================================");
-        console.log("❌ JWT VERIFICATION FAILED");
-        console.log("==========================================");
-        console.log("Error Name :", error.name);
-        console.log("Error Message :", error.message);
-        console.log("Stack :", error.stack);
-        console.log("==========================================\n");
-
-        return errorResponse(
-            res,
-            "Invalid or expired token.",
-            401
-        );
-
-    }
-
-};
-
-
-/**
- * ==========================================================
- * Role Authorization Middleware
- * ==========================================================
- */
-const authorize = (...roles) => {
-
-    return (req, res, next) => {
-
-        try {
-
-            console.log("\n==========================================");
-            console.log("🛡 ROLE AUTHORIZATION");
-            console.log("==========================================");
-
-            if (!req.user) {
-
-                return errorResponse(
-                    res,
-                    "Unauthorized access.",
-                    401
-                );
-
+            if (roleResult.rows.length > 0) {
+                req.user.roleName = roleResult.rows[0].role_name;
             }
 
-            console.log("Logged In User:");
-            console.log(req.user);
+            req.user.permissions = await getPermissionsByRoleId(decoded.roleId);
+        }
 
-            console.log("Allowed Roles:");
-            console.log(roles);
+        return next();
+    } catch (error) {
+        return errorResponse(res, "Invalid or expired token.", 401);
+    }
+};
+
+/**
+ * Role Authorization Middleware (legacy userType checks)
+ * Prefer requirePermission for new routes.
+ */
+const authorize = (...roles) => {
+    return (req, res, next) => {
+        try {
+            if (!req.user) {
+                return errorResponse(res, "Unauthorized access.", 401);
+            }
 
             if (!roles.includes(req.user.userType)) {
-
                 return errorResponse(
                     res,
                     "You do not have permission to access this resource.",
                     403
                 );
-
             }
 
-            console.log("✅ ROLE VERIFIED");
-
-            next();
-
+            return next();
         } catch (error) {
-
-            console.log("\n==========================================");
-            console.log("❌ ROLE AUTHORIZATION FAILED");
-            console.log("==========================================");
-            console.log(error);
-            console.log("==========================================\n");
-
-            return errorResponse(
-                res,
-                "Authorization failed.",
-                403
-            );
-
+            return errorResponse(res, "Authorization failed.", 403);
         }
-
     };
-
 };
 
 module.exports = {
