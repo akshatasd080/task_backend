@@ -71,6 +71,31 @@ router.post(
             .optional({ checkFalsy: true })
             .isURL()
             .withMessage("Logo URL must be a valid URL."),
+
+        body("admin_email")
+            .trim()
+            .notEmpty()
+            .withMessage("Company admin email is required.")
+            .isEmail()
+            .withMessage("Please enter a valid admin email."),
+
+        body("admin_password")
+            .notEmpty()
+            .withMessage("Company admin password is required.")
+            .isLength({ min: 8 })
+            .withMessage("Admin password must be at least 8 characters."),
+
+        body("admin_first_name")
+            .optional({ checkFalsy: true })
+            .trim()
+            .isLength({ min: 1, max: 100 })
+            .withMessage("Admin first name is invalid."),
+
+        body("admin_last_name")
+            .optional({ checkFalsy: true })
+            .trim()
+            .isLength({ max: 100 })
+            .withMessage("Admin last name is invalid."),
     ],
     createCompany
 );
@@ -99,7 +124,7 @@ router.get(
 router.get(
     "/:id",
     authenticate,
-    requirePermission("company.view", "company.update", "company.manage"),
+    requirePermission("company.view", "company.update", "company.manage", "company.create"),
     getCompanyById
 );
 

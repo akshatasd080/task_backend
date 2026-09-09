@@ -2,6 +2,7 @@ const { verifyToken } = require("../config/jwt");
 const { errorResponse } = require("../utils/response");
 const { getPermissionsByRoleId } = require("../utils/helpers");
 const pool = require("../config/db");
+const { SUPER_ADMIN_PERMISSIONS } = require("../utils/companyOnboard");
 
 /**
  * JWT Authentication Middleware
@@ -43,7 +44,7 @@ const authenticate = async (req, res, next) => {
 
         if (decoded.userType === "SYSTEM_ADMIN") {
             req.user.roleName = "Super Admin";
-            req.user.permissions = ["*"];
+            req.user.permissions = SUPER_ADMIN_PERMISSIONS;
             return next();
         }
 

@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { onboardCompanyDefaults } = require("../utils/companyOnboard");
 
 
 /**
@@ -18,7 +19,25 @@ const createCompanyService = async (
         phone,
         address,
         logo_url,
+        admin_email,
+        admin_password,
+        admin_first_name,
+        admin_last_name,
     } = companyData;
+
+    if (!admin_email || !admin_password) {
+        throw Object.assign(
+            new Error("Company admin email and password are required."),
+            { statusCode: 400 }
+        );
+    }
+
+    if (String(admin_password).length < 8) {
+        throw Object.assign(
+            new Error("Admin password must be at least 8 characters."),
+            { statusCode: 400 }
+        );
+    }
 
     // ======================================================
     // Check Company Code
@@ -56,61 +75,103 @@ const createCompanyService = async (
         throw new Error("Company email already exists.");
     }
 
-    // ======================================================
-    // Create Company
-    // ======================================================
+    const client = await pool.connect();
 
-    const result = await pool.query(
-        `
-        INSERT INTO task_management.companies
-        (
-            company_name,
-            company_code,
-            email,
-            phone,
-            address,
-            logo_url,
-            created_by,
-            updated_by
-        )
-        VALUES
-        (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8
-        )
-        RETURNING
-            id,
-            company_name,
-            company_code,
-            email,
-            phone,
-            address,
-            logo_url,
-            is_active,
-            created_by,
-            updated_by,
-            created_at,
-            updated_at
-        `,
-        [
-            company_name,
-            company_code,
-            email,
-            phone || null,
-            address || null,
-            logo_url || null,
-            loggedInUserId,
-            loggedInUserId,
-        ]
-    );
+    try {
+        await client.query("BEGIN");
 
-    return result.rows[0];
+        const result = await client.query(
+            `
+            INSERT INTO task_management.companies
+            (
+                company_name,
+                company_code,
+                email,
+                phone,
+                address,
+                logo_url,
+                created_by,
+                updated_by
+            )
+            VALUES
+            (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5,
+                $6,
+                $7,
+                $8
+            )
+            RETURNING
+                id,
+                company_name,
+                company_code,
+                email,
+                phone,
+                address,
+                logo_url,
+                is_active,
+                created_by,
+                updated_by,
+                created_at,
+                updated_at
+            `,
+            [
+                company_name,
+                company_code,
+                email,
+                phone || null,
+                address || null,
+                logo_url || null,
+                loggedInUserId,
+                loggedInUserId,
+            ]
+        );
+
+        const company = result.rows[0];
+
+        let onboard;
+        try {
+            onboard = await onboardCompanyDefaults({
+                companyId: company.id,
+                adminEmail: admin_email,
+                adminPassword: admin_password,
+                adminFirstName: admin_first_name || "Company",
+                adminLastName: admin_last_name || "Admin",
+                adminPhone: phone || null,
+                createdBy: loggedInUserId,
+                db: client,
+            });
+        } catch (onboardError) {
+            await client.query("ROLLBACK");
+            throw onboardError;
+        }
+
+        await client.query("COMMIT");
+
+        return {
+            ...company,
+            company_admin: {
+                id: onboard.company_admin.id,
+                email: onboard.company_admin.email,
+                first_name: onboard.company_admin.first_name,
+                last_name: onboard.company_admin.last_name,
+                role: "Company Admin",
+            },
+            default_roles: onboard.roles.map((r) => r.role_name),
+        };
+    } catch (error) {
+        try {
+            await client.query("ROLLBACK");
+        } catch (_) {
+            // ignore
+        }
+        throw error;
+    } finally {
+        client.release();
+    }
 
 };
 

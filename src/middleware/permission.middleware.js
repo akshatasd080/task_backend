@@ -1,11 +1,10 @@
 const { errorResponse } = require("../utils/response");
 const { isSystemAdmin } = require("../utils/tenant");
+const { SUPER_ADMIN_PERMISSIONS } = require("../utils/companyOnboard");
 
 /**
  * Require one or more permissions.
- * SYSTEM_ADMIN bypasses permission checks.
- * Usage: requirePermission("task.create")
- *        requirePermission("task.view", "view_all_company_tasks")
+ * SYSTEM_ADMIN only has company.* permissions (no task/user CRM work).
  */
 const requirePermission = (...requiredPermissions) => {
     return (req, res, next) => {
@@ -14,11 +13,11 @@ const requirePermission = (...requiredPermissions) => {
                 return errorResponse(res, "Unauthorized access.", 401);
             }
 
-            if (isSystemAdmin(req.user)) {
-                return next();
-            }
+            let userPermissions = req.user.permissions || [];
 
-            const userPermissions = req.user.permissions || [];
+            if (isSystemAdmin(req.user)) {
+                userPermissions = SUPER_ADMIN_PERMISSIONS;
+            }
 
             const hasPermission = requiredPermissions.some((perm) =>
                 userPermissions.includes(perm)
@@ -39,9 +38,6 @@ const requirePermission = (...requiredPermissions) => {
     };
 };
 
-/**
- * Require ALL listed permissions.
- */
 const requireAllPermissions = (...requiredPermissions) => {
     return (req, res, next) => {
         try {
@@ -49,11 +45,12 @@ const requireAllPermissions = (...requiredPermissions) => {
                 return errorResponse(res, "Unauthorized access.", 401);
             }
 
+            let userPermissions = req.user.permissions || [];
+
             if (isSystemAdmin(req.user)) {
-                return next();
+                userPermissions = SUPER_ADMIN_PERMISSIONS;
             }
 
-            const userPermissions = req.user.permissions || [];
             const hasAll = requiredPermissions.every((perm) =>
                 userPermissions.includes(perm)
             );

@@ -2,6 +2,7 @@ const bcrypt = require("bcrypt");
 const pool = require("../config/db");
 const { generateToken } = require("../config/jwt");
 const { getPermissionsByRoleId } = require("../utils/helpers");
+const { SUPER_ADMIN_PERMISSIONS } = require("../utils/companyOnboard");
 
 const buildCompanyUserPayload = async (user) => {
     const roleResult = await pool.query(
@@ -91,7 +92,7 @@ const loginService = async (email, password) => {
                 ...admin,
                 userType: "SYSTEM_ADMIN",
                 role_name: "Super Admin",
-                permissions: ["*"],
+                permissions: SUPER_ADMIN_PERMISSIONS,
                 company_id: null,
                 company: null,
             },
@@ -178,7 +179,7 @@ const getProfileService = async (loggedInUser) => {
             ...result.rows[0],
             userType: "SYSTEM_ADMIN",
             role_name: "Super Admin",
-            permissions: ["*"],
+            permissions: SUPER_ADMIN_PERMISSIONS,
             company_id: null,
             company: null,
         };
