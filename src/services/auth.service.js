@@ -1,7 +1,12 @@
 const bcrypt = require("bcrypt");
 const pool = require("../config/db");
 const { generateToken } = require("../config/jwt");
-const { getPermissionsByRoleId } = require("../utils/helpers");
+const {
+    getPermissionsByRoleId,
+    getCompanyUserAccess,
+    assertCompanyUserCanAccess,
+    COMPANY_DEACTIVATED_MESSAGE,
+} = require("../utils/helpers");
 const { SUPER_ADMIN_PERMISSIONS } = require("../utils/companyOnboard");
 
 const buildCompanyUserPayload = async (user) => {
@@ -19,7 +24,7 @@ const buildCompanyUserPayload = async (user) => {
 
     const companyResult = await pool.query(
         `
-        SELECT id, company_name, company_code
+        SELECT id, company_name, company_code, is_active, logo_url
         FROM task_management.companies
         WHERE id = $1 AND deleted_at IS NULL
         `,
@@ -27,6 +32,12 @@ const buildCompanyUserPayload = async (user) => {
     );
 
     const company = companyResult.rows[0] || null;
+
+    if (!company || company.is_active !== true) {
+        const error = new Error(COMPANY_DEACTIVATED_MESSAGE);
+        error.statusCode = 401;
+        throw error;
+    }
 
     return {
         id: user.id,
@@ -121,6 +132,9 @@ const loginService = async (email, password) => {
     if (!isPasswordMatched) {
         throw new Error("Invalid Email or Password");
     }
+
+    const access = await getCompanyUserAccess(user.id);
+    assertCompanyUserCanAccess(access);
 
     await pool.query(
         `

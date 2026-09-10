@@ -63,9 +63,7 @@ router.post(
 
         body("description")
             .optional({ checkFalsy: true })
-            .trim()
-            .isLength({ max: 2000 })
-            .withMessage("Description cannot exceed 2000 characters."),
+            .trim(),
 
         body("start_date")
             .optional({ checkFalsy: true })
@@ -147,9 +145,7 @@ router.put(
 
         body("description")
             .optional({ checkFalsy: true })
-            .trim()
-            .isLength({ max: 2000 })
-            .withMessage("Description cannot exceed 2000 characters."),
+            .trim(),
 
         body("start_date")
             .optional({ checkFalsy: true })

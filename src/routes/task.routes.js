@@ -38,6 +38,8 @@ const {
     getTaskHistory,
 } = require("../controllers/task.controller");
 
+const { VALID_STATUSES } = require("../services/task.service");
+
 
 /**
  * ==========================================================
@@ -73,9 +75,7 @@ router.post(
 
         body("description")
             .optional({ checkFalsy: true })
-            .trim()
-            .isLength({ max: 5000 })
-            .withMessage("Description cannot exceed 5000 characters."),
+            .trim(),
 
         body("assigned_to")
             .notEmpty()
@@ -95,7 +95,7 @@ router.post(
 
         body("status")
             .optional()
-            .isIn(["Todo", "In Progress", "On Hold", "Completed", "Cancelled"])
+            .isIn(VALID_STATUSES)
             .withMessage("Invalid status."),
 
         body("start_date")
@@ -202,12 +202,12 @@ router.post(
 router.put(
     "/:id/status",
     authenticate,
-    requirePermission("task.change_status"),
+    requirePermission("task.change_status", "task.view"),
     [
         body("status")
             .notEmpty()
             .withMessage("Status is required.")
-            .isIn(["Todo", "In Progress", "On Hold", "Completed", "Cancelled"])
+            .isIn(VALID_STATUSES)
             .withMessage("Invalid status."),
     ],
     changeTaskStatus
@@ -400,9 +400,7 @@ router.put(
 
         body("description")
             .optional({ checkFalsy: true })
-            .trim()
-            .isLength({ max: 5000 })
-            .withMessage("Description cannot exceed 5000 characters."),
+            .trim(),
 
         body("project_id")
             .optional({ checkFalsy: true })
@@ -416,7 +414,7 @@ router.put(
 
         body("status")
             .optional()
-            .isIn(["Todo", "In Progress", "On Hold", "Completed", "Cancelled"])
+            .isIn(VALID_STATUSES)
             .withMessage("Invalid status."),
 
         body("start_date")

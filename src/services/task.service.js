@@ -1,10 +1,20 @@
 const pool = require("../config/db");
 const path = require("path");
 const { isSystemAdmin } = require("../utils/tenant");
-const { logActivity, createNotification } = require("../utils/helpers");
+const { logActivity, createNotification, teamTaskAccessSql } = require("../utils/helpers");
 
 const VALID_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
-const VALID_STATUSES = ["Todo", "In Progress", "On Hold", "Completed", "Cancelled"];
+const VALID_STATUSES = [
+    "Backlog",
+    "Todo",
+    "In Progress",
+    "On Hold",
+    "Blocked",
+    "In Review",
+    "Changes Requested",
+    "Completed",
+    "Cancelled",
+];
 
 const ensureCompanyAccess = (user, companyId) => {
     if (isSystemAdmin(user)) return;
@@ -27,7 +37,8 @@ const canViewTask = (user, task) => {
     return (
         Number(task.assigned_to) === Number(user.id) ||
         Number(task.created_by) === Number(user.id) ||
-        Number(task.assigned_by) === Number(user.id)
+        Number(task.assigned_by) === Number(user.id) ||
+        Number(task.assigned_to_manager_id) === Number(user.id)
     );
 };
 
@@ -42,6 +53,7 @@ const getTaskRow = async (taskId) => {
             assignee.first_name AS assigned_to_first_name,
             assignee.last_name AS assigned_to_last_name,
             assignee.email AS assigned_to_email,
+            assignee.manager_id AS assigned_to_manager_id,
             assigner.first_name AS assigned_by_first_name,
             assigner.last_name AS assigned_by_last_name
         FROM task_management.tasks t
@@ -78,7 +90,7 @@ const createTaskService = async (data, loggedInUser) => {
         project_id,
         assigned_to,
         priority = "Medium",
-        status = "Todo",
+        status = "Backlog",
         start_date,
         due_date,
         estimated_hours,
@@ -200,9 +212,7 @@ const getTasksService = async (loggedInUser, query = {}) => {
 
         if (!hasPermission(loggedInUser, "view_all_company_tasks")) {
             params.push(loggedInUser.id);
-            filters.push(
-                `(t.assigned_to = $${params.length} OR t.created_by = $${params.length} OR t.assigned_by = $${params.length})`
-            );
+            filters.push(teamTaskAccessSql(`$${params.length}`));
         }
     } else if (query.company_id) {
         params.push(Number(query.company_id));
@@ -514,16 +524,19 @@ const changeStatusService = async (taskId, status, loggedInUser) => {
         throw Object.assign(new Error("Invalid status."), { statusCode: 400 });
     }
 
+    const existing = await getTaskByIdService(taskId, loggedInUser);
+    const isManagerOfAssignee =
+        Number(existing.assigned_to_manager_id) === Number(loggedInUser.id);
+
     if (
         !hasPermission(loggedInUser, "task.change_status") &&
-        !isSystemAdmin(loggedInUser)
+        !isSystemAdmin(loggedInUser) &&
+        !isManagerOfAssignee
     ) {
         throw Object.assign(new Error("You do not have permission to perform this action."), {
             statusCode: 403,
         });
     }
-
-    const existing = await getTaskByIdService(taskId, loggedInUser);
 
     // Employees can change status on tasks they can view (assigned/created)
     await pool.query(
@@ -555,6 +568,21 @@ const changeStatusService = async (taskId, status, loggedInUser) => {
             userId: existing.assigned_to,
             title: "Task status updated",
             message: `Task "${existing.title}" status changed to ${status}`,
+            type: "status_changed",
+            relatedTaskId: taskId,
+        });
+    }
+
+    if (
+        existing.assigned_to_manager_id &&
+        Number(existing.assigned_to_manager_id) !== Number(loggedInUser.id) &&
+        Number(existing.assigned_to_manager_id) !== Number(existing.assigned_to)
+    ) {
+        await createNotification({
+            companyId: existing.company_id,
+            userId: existing.assigned_to_manager_id,
+            title: "Team member task update",
+            message: `Task "${existing.title}" for ${existing.assigned_to_first_name || "a team member"} is now ${status}`,
             type: "status_changed",
             relatedTaskId: taskId,
         });

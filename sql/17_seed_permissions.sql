@@ -26,6 +26,11 @@ VALUES
     ('role.delete', 'role', 'Delete roles'),
     ('manage_roles', 'role', 'Manage roles and permissions'),
 
+    ('designation.view', 'designation', 'View designations'),
+    ('designation.create', 'designation', 'Create designations'),
+    ('designation.update', 'designation', 'Update designations'),
+    ('designation.delete', 'designation', 'Delete designations'),
+
     ('project.create', 'project', 'Create projects'),
     ('project.view', 'project', 'View projects'),
     ('project.update', 'project', 'Update projects'),

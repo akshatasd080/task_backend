@@ -1,5 +1,35 @@
 const pool = require("../config/db");
+const bcrypt = require("bcrypt");
 const { onboardCompanyDefaults } = require("../utils/companyOnboard");
+const {
+    persistCompanyLogo,
+    deleteUploadedFile,
+} = require("../middleware/upload.middleware");
+
+const getCompanyAdminUser = async (companyId) => {
+    const result = await pool.query(
+        `
+        SELECT u.id, u.email, u.first_name, u.last_name, u.company_id
+        FROM task_management.users u
+        INNER JOIN task_management.roles r ON r.id = u.role_id
+        WHERE u.company_id = $1
+          AND u.deleted_at IS NULL
+          AND r.role_name = 'Company Admin'
+        ORDER BY u.id ASC
+        LIMIT 1
+        `,
+        [companyId]
+    );
+
+    if (result.rows.length === 0) {
+        throw Object.assign(
+            new Error("Company Admin not found for this company."),
+            { statusCode: 404 }
+        );
+    }
+
+    return result.rows[0];
+};
 
 
 /**
@@ -9,7 +39,8 @@ const { onboardCompanyDefaults } = require("../utils/companyOnboard");
  */
 const createCompanyService = async (
     companyData,
-    loggedInUserId
+    loggedInUserId,
+    logoFile = null
 ) => {
 
     const {
@@ -18,7 +49,6 @@ const createCompanyService = async (
         email,
         phone,
         address,
-        logo_url,
         admin_email,
         admin_password,
         admin_first_name,
@@ -124,13 +154,27 @@ const createCompanyService = async (
                 email,
                 phone || null,
                 address || null,
-                logo_url || null,
+                null,
                 loggedInUserId,
                 loggedInUserId,
             ]
         );
 
         const company = result.rows[0];
+
+        if (logoFile) {
+            const logoPath = persistCompanyLogo(logoFile, company.id);
+            const logoResult = await client.query(
+                `
+                UPDATE task_management.companies
+                SET logo_url = $1
+                WHERE id = $2
+                RETURNING logo_url
+                `,
+                [logoPath, company.id]
+            );
+            company.logo_url = logoResult.rows[0]?.logo_url || logoPath;
+        }
 
         let onboard;
         try {
@@ -186,21 +230,35 @@ const getAllCompaniesService = async () => {
     const result = await pool.query(
         `
         SELECT
-            id,
-            company_name,
-            company_code,
-            email,
-            phone,
-            address,
-            logo_url,
-            is_active,
-            created_by,
-            updated_by,
-            created_at,
-            updated_at
-        FROM task_management.companies
-        WHERE deleted_at IS NULL
-        ORDER BY id ASC
+            c.id,
+            c.company_name,
+            c.company_code,
+            c.email,
+            c.phone,
+            c.address,
+            c.logo_url,
+            c.is_active,
+            c.created_by,
+            c.updated_by,
+            c.created_at,
+            c.updated_at,
+            admin.id AS admin_id,
+            admin.email AS admin_email,
+            admin.first_name AS admin_first_name,
+            admin.last_name AS admin_last_name
+        FROM task_management.companies c
+        LEFT JOIN LATERAL (
+            SELECT u.id, u.email, u.first_name, u.last_name
+            FROM task_management.users u
+            INNER JOIN task_management.roles r ON r.id = u.role_id
+            WHERE u.company_id = c.id
+              AND u.deleted_at IS NULL
+              AND r.role_name = 'Company Admin'
+            ORDER BY u.id ASC
+            LIMIT 1
+        ) admin ON TRUE
+        WHERE c.deleted_at IS NULL
+        ORDER BY c.id ASC
         `
     );
 
@@ -266,7 +324,8 @@ const updateCompanyService = async (
     companyId,
     companyData,
     loggedInUserId,
-    loggedInUser = null
+    loggedInUser = null,
+    logoFile = null
 ) => {
 
     if (
@@ -285,7 +344,6 @@ const updateCompanyService = async (
         email,
         phone,
         address,
-        logo_url,
     } = companyData;
 
     // ======================================================
@@ -294,7 +352,7 @@ const updateCompanyService = async (
 
     const companyResult = await pool.query(
         `
-        SELECT id
+        SELECT id, logo_url
         FROM task_management.companies
         WHERE id = $1
         AND deleted_at IS NULL
@@ -304,6 +362,16 @@ const updateCompanyService = async (
 
     if (companyResult.rows.length === 0) {
         throw new Error("Company not found.");
+    }
+
+    const existing = companyResult.rows[0];
+    let nextLogo = existing.logo_url || null;
+
+    if (logoFile) {
+        nextLogo = persistCompanyLogo(logoFile, companyId);
+        if (existing.logo_url && existing.logo_url !== nextLogo) {
+            deleteUploadedFile(existing.logo_url);
+        }
     }
 
     // ======================================================
@@ -387,7 +455,7 @@ const updateCompanyService = async (
             email,
             phone || null,
             address || null,
-            logo_url || null,
+            nextLogo,
             loggedInUserId,
             companyId,
         ]
@@ -533,6 +601,91 @@ const deleteCompanyService = async (
 };
 
 
+/**
+ * ==========================================================
+ * Update Company Admin email / password (Super Admin)
+ * ==========================================================
+ */
+const updateCompanyAdminLoginService = async (companyId, data, loggedInUserId) => {
+    const company = await getCompanyByIdService(companyId);
+    const admin = await getCompanyAdminUser(company.id);
+
+    const nextEmail = data.admin_email
+        ? String(data.admin_email).trim().toLowerCase()
+        : null;
+    const nextPassword = data.admin_password
+        ? String(data.admin_password)
+        : "";
+
+    if (!nextEmail && !nextPassword) {
+        throw Object.assign(
+            new Error("Provide a new admin email and/or password."),
+            { statusCode: 400 }
+        );
+    }
+
+    if (nextPassword && nextPassword.length < 8) {
+        throw Object.assign(
+            new Error("Admin password must be at least 8 characters."),
+            { statusCode: 400 }
+        );
+    }
+
+    if (nextEmail && nextEmail !== String(admin.email).toLowerCase()) {
+        const emailTaken = await pool.query(
+            `
+            SELECT id FROM task_management.users
+            WHERE email = $1 AND deleted_at IS NULL AND id <> $2
+            `,
+            [nextEmail, admin.id]
+        );
+        if (emailTaken.rows.length > 0) {
+            throw Object.assign(
+                new Error("This email is already used by another user."),
+                { statusCode: 400 }
+            );
+        }
+    }
+
+    const hashedPassword = nextPassword
+        ? await bcrypt.hash(nextPassword, 10)
+        : null;
+
+    const result = await pool.query(
+        `
+        UPDATE task_management.users
+        SET
+            email = COALESCE($1, email),
+            password = COALESCE($2, password),
+            password_changed_at = CASE WHEN $2 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE password_changed_at END,
+            updated_by = $3,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+        RETURNING id, email, first_name, last_name, company_id, updated_at
+        `,
+        [
+            nextEmail || null,
+            hashedPassword,
+            loggedInUserId,
+            admin.id,
+        ]
+    );
+
+    return {
+        company_id: company.id,
+        company_name: company.company_name,
+        company_admin: {
+            id: result.rows[0].id,
+            email: result.rows[0].email,
+            first_name: result.rows[0].first_name,
+            last_name: result.rows[0].last_name,
+            role: "Company Admin",
+            password_updated: Boolean(nextPassword),
+        },
+    };
+};
+
+
 module.exports = {
     createCompanyService,
     getAllCompaniesService,
@@ -540,4 +693,5 @@ module.exports = {
     updateCompanyService,
     updateCompanyStatusService,
     deleteCompanyService,
+    updateCompanyAdminLoginService,
 };

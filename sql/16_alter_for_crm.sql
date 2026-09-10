@@ -43,8 +43,21 @@ ALTER TABLE task_management.tasks
     DROP CONSTRAINT IF EXISTS chk_status;
 
 ALTER TABLE task_management.tasks
+    ALTER COLUMN status SET DEFAULT 'Backlog';
+
+ALTER TABLE task_management.tasks
     ADD CONSTRAINT chk_status
-    CHECK (status IN ('Todo', 'In Progress', 'On Hold', 'Completed', 'Cancelled'));
+    CHECK (status IN (
+        'Backlog',
+        'Todo',
+        'In Progress',
+        'On Hold',
+        'Blocked',
+        'In Review',
+        'Changes Requested',
+        'Completed',
+        'Cancelled'
+    ));
 
 -- Migrate legacy values if any
 UPDATE task_management.tasks SET priority = 'Urgent' WHERE priority = 'Critical';

@@ -7,6 +7,11 @@ const {
 } = require("express-validator");
 
 const {
+    emailField,
+    phoneField,
+} = require("../validators/common");
+
+const {
     authenticate,
 } = require("../middleware/auth.middleware");
 
@@ -20,6 +25,7 @@ const {
     getUserById,
     updateUser,
     deleteUser,
+    getMyTeam,
 } = require("../controllers/user.controller");
 
 
@@ -34,6 +40,20 @@ router.get(
     authenticate,
     requirePermission("user.view", "manage_users"),
     getUsers
+);
+
+
+/**
+ * ==========================================================
+ * Get My Team
+ * GET /api/v1/users/team
+ * ==========================================================
+ */
+router.get(
+    "/team",
+    authenticate,
+    requirePermission("task.view", "user.view", "dashboard.view"),
+    getMyTeam
 );
 
 
@@ -61,12 +81,7 @@ router.post(
             .isLength({ max: 100 })
             .withMessage("Last name cannot exceed 100 characters."),
 
-        body("email")
-            .trim()
-            .notEmpty()
-            .withMessage("Email is required.")
-            .isEmail()
-            .withMessage("Please enter a valid email address."),
+        emailField("email"),
 
         body("password")
             .notEmpty()
@@ -80,10 +95,7 @@ router.post(
             .isInt({ min: 1 })
             .withMessage("Role ID must be a valid integer."),
 
-        body("phone")
-            .optional({ checkFalsy: true })
-            .isLength({ min: 10, max: 20 })
-            .withMessage("Phone number must be between 10 and 20 characters."),
+        phoneField("phone"),
 
         body("department_id")
             .optional({ checkFalsy: true })
@@ -155,10 +167,9 @@ router.put(
             .isLength({ max: 100 })
             .withMessage("Last name cannot exceed 100 characters."),
 
-        body("phone")
-            .optional({ checkFalsy: true })
-            .isLength({ min: 10, max: 20 })
-            .withMessage("Phone number must be between 10 and 20 characters."),
+        emailField("email", { required: false }),
+
+        phoneField("phone"),
 
         body("role_id")
             .optional()

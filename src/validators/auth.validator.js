@@ -1,13 +1,9 @@
 const { body } = require("express-validator");
+const { emailField } = require("./common");
 
 const loginValidation = [
 
-    body("email")
-        .trim()
-        .notEmpty()
-        .withMessage("Email is required.")
-        .isEmail()
-        .withMessage("Please enter a valid email address."),
+    emailField("email"),
 
     body("password")
         .trim()

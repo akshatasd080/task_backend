@@ -24,6 +24,8 @@ const FILES = [
     "14_activity_logs.sql",
     "15_system_admins.sql",
     "16_alter_for_crm.sql",
+    "19_task_statuses.sql",
+    "20_designations.sql",
     "17_seed_permissions.sql",
     "18_seed_demo_company.sql",
     "99_seed.sql",

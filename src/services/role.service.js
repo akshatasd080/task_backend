@@ -41,7 +41,7 @@ const getRolesService = async (loggedInUser, query = {}) => {
             COALESCE(
                 json_agg(
                     json_build_object(
-                        'id', p.id,
+                        'id', p.id::text,
                         'permission_name', p.permission_name,
                         'module_name', p.module_name
                     )
@@ -72,7 +72,7 @@ const getRoleByIdService = async (roleId, loggedInUser) => {
             COALESCE(
                 json_agg(
                     json_build_object(
-                        'id', p.id,
+                        'id', p.id::text,
                         'permission_name', p.permission_name,
                         'module_name', p.module_name
                     )

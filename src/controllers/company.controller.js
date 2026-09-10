@@ -7,12 +7,14 @@ const {
     updateCompanyService,
     updateCompanyStatusService,
     deleteCompanyService,
+    updateCompanyAdminLoginService,
 } = require("../services/company.service");
 
 const {
     successResponse,
     errorResponse,
 } = require("../utils/response");
+const { deleteUploadedFile } = require("../middleware/upload.middleware");
 
 
 /**
@@ -31,18 +33,18 @@ const createCompany = async (req, res) => {
         const errors = validationResult(req);
 
         if (!errors.isEmpty()) {
-
+            deleteUploadedFile(req.file?.path);
             return errorResponse(
                 res,
                 errors.array()[0].msg,
                 400
             );
-
         }
 
         const result = await createCompanyService(
             req.body,
-            req.user.id
+            req.user.id,
+            req.file
         );
 
         return successResponse(
@@ -58,6 +60,8 @@ const createCompany = async (req, res) => {
         console.error("CREATE COMPANY ERROR");
         console.error(error.message);
         console.error("====================================");
+
+        deleteUploadedFile(req.file?.path);
 
         return errorResponse(
             res,
@@ -160,13 +164,12 @@ const updateCompany = async (req, res) => {
         const errors = validationResult(req);
 
         if (!errors.isEmpty()) {
-
+            deleteUploadedFile(req.file?.path);
             return errorResponse(
                 res,
                 errors.array()[0].msg,
                 400
             );
-
         }
 
         const { id } = req.params;
@@ -175,7 +178,8 @@ const updateCompany = async (req, res) => {
             id,
             req.body,
             req.user.id,
-            req.user
+            req.user,
+            req.file
         );
 
         return successResponse(
@@ -191,6 +195,8 @@ const updateCompany = async (req, res) => {
         console.error("UPDATE COMPANY ERROR");
         console.error(error.message);
         console.error("====================================");
+
+        deleteUploadedFile(req.file?.path);
 
         return errorResponse(
             res,
@@ -263,6 +269,58 @@ const updateCompanyStatus = async (req, res) => {
 
 /**
  * ==========================================================
+ * Update Company Admin Login (email / password)
+ * ==========================================================
+ */
+const updateCompanyAdminLogin = async (req, res) => {
+
+    try {
+
+        const errors = validationResult(req);
+
+        if (!errors.isEmpty()) {
+            return errorResponse(
+                res,
+                errors.array()[0].msg,
+                400
+            );
+        }
+
+        const { id } = req.params;
+
+        const result = await updateCompanyAdminLoginService(
+            id,
+            req.body,
+            req.user.id
+        );
+
+        return successResponse(
+            res,
+            "Company Admin login updated successfully.",
+            result,
+            200
+        );
+
+    } catch (error) {
+
+        console.error("====================================");
+        console.error("UPDATE COMPANY ADMIN LOGIN ERROR");
+        console.error(error.message);
+        console.error("====================================");
+
+        return errorResponse(
+            res,
+            error.message,
+            error.statusCode || 400
+        );
+
+    }
+
+};
+
+
+/**
+ * ==========================================================
  * Delete Company (Soft Delete)
  * ==========================================================
  */
@@ -309,4 +367,5 @@ module.exports = {
     updateCompany,
     updateCompanyStatus,
     deleteCompany,
+    updateCompanyAdminLogin,
 };

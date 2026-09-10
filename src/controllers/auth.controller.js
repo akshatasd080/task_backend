@@ -59,7 +59,7 @@ const login = async (req, res) => {
         return errorResponse(
             res,
             error.message,
-            401
+            error.statusCode || 401
         );
 
     }
@@ -95,7 +95,7 @@ const getProfile = async (req, res) => {
         return errorResponse(
             res,
             error.message,
-            500
+            error.statusCode || 500
         );
 
     }

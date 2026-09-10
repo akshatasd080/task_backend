@@ -1,5 +1,6 @@
 const pool = require("../config/db");
 const { isSystemAdmin } = require("../utils/tenant");
+const { teamTaskAccessSql } = require("../utils/helpers");
 
 const getDashboardService = async (loggedInUser) => {
     const companyId = isSystemAdmin(loggedInUser) ? null : Number(loggedInUser.companyId);
@@ -19,7 +20,10 @@ const getDashboardService = async (loggedInUser) => {
     if (!canViewAll) {
         baseParams.push(userId);
         baseFilters.push(
-            `(assigned_to = $${baseParams.length} OR created_by = $${baseParams.length})`
+            `(assigned_to = $${baseParams.length} OR created_by = $${baseParams.length} OR assigned_by = $${baseParams.length} OR assigned_to IN (
+                SELECT id FROM task_management.users
+                WHERE manager_id = $${baseParams.length} AND deleted_at IS NULL
+            ))`
         );
     }
 
@@ -29,9 +33,13 @@ const getDashboardService = async (loggedInUser) => {
         `
         SELECT
             COUNT(*)::int AS total_tasks,
+            COUNT(*) FILTER (WHERE status = 'Backlog')::int AS backlog,
             COUNT(*) FILTER (WHERE status = 'Todo')::int AS todo,
             COUNT(*) FILTER (WHERE status = 'In Progress')::int AS in_progress,
             COUNT(*) FILTER (WHERE status = 'On Hold')::int AS on_hold,
+            COUNT(*) FILTER (WHERE status = 'Blocked')::int AS blocked,
+            COUNT(*) FILTER (WHERE status = 'In Review')::int AS in_review,
+            COUNT(*) FILTER (WHERE status = 'Changes Requested')::int AS changes_requested,
             COUNT(*) FILTER (WHERE status = 'Completed')::int AS completed,
             COUNT(*) FILTER (WHERE status = 'Cancelled')::int AS cancelled,
             COUNT(*) FILTER (
@@ -74,7 +82,18 @@ const getDashboardService = async (loggedInUser) => {
         FROM task_management.tasks
         ${where}
         GROUP BY status
-        ORDER BY status
+        ORDER BY CASE status
+            WHEN 'Backlog' THEN 1
+            WHEN 'Todo' THEN 2
+            WHEN 'In Progress' THEN 3
+            WHEN 'On Hold' THEN 4
+            WHEN 'Blocked' THEN 5
+            WHEN 'In Review' THEN 6
+            WHEN 'Changes Requested' THEN 7
+            WHEN 'Completed' THEN 8
+            WHEN 'Cancelled' THEN 9
+            ELSE 99
+        END
         `,
         baseParams
     );
@@ -100,9 +119,7 @@ const getDashboardService = async (loggedInUser) => {
 
     if (!canViewAll) {
         listParams.push(userId);
-        listFilters.push(
-            `(t.assigned_to = $${listParams.length} OR t.created_by = $${listParams.length})`
-        );
+        listFilters.push(teamTaskAccessSql(`$${listParams.length}`));
     }
 
     const listWhere = listFilters.join(" AND ");

@@ -16,12 +16,23 @@ const {
 } = require("../middleware/permission.middleware");
 
 const {
+    emailField,
+    phoneField,
+} = require("../validators/common");
+
+const {
+    logoUpload,
+    handleUploadError,
+} = require("../middleware/upload.middleware");
+
+const {
     createCompany,
     getAllCompanies,
     getCompanyById,
     updateCompany,
     updateCompanyStatus,
     deleteCompany,
+    updateCompanyAdminLogin,
 } = require("../controllers/company.controller");
 
 
@@ -35,6 +46,8 @@ router.post(
     "/create",
     authenticate,
     authorize("SYSTEM_ADMIN"),
+    logoUpload.single("logo"),
+    handleUploadError,
     [
         body("company_name")
             .trim()
@@ -50,34 +63,15 @@ router.post(
             .isLength({ min: 2, max: 20 })
             .withMessage("Company code must be between 2 and 20 characters."),
 
-        body("email")
-            .trim()
-            .notEmpty()
-            .withMessage("Company email is required.")
-            .isEmail()
-            .withMessage("Please enter a valid email address."),
-
-        body("phone")
-            .optional({ checkFalsy: true })
-            .isLength({ min: 10, max: 20 })
-            .withMessage("Phone number must be between 10 and 20 characters."),
+        emailField("email", { label: "Company email" }),
+        phoneField("phone"),
 
         body("address")
             .optional({ checkFalsy: true })
             .isLength({ max: 500 })
             .withMessage("Address cannot exceed 500 characters."),
 
-        body("logo_url")
-            .optional({ checkFalsy: true })
-            .isURL()
-            .withMessage("Logo URL must be a valid URL."),
-
-        body("admin_email")
-            .trim()
-            .notEmpty()
-            .withMessage("Company admin email is required.")
-            .isEmail()
-            .withMessage("Please enter a valid admin email."),
+        emailField("admin_email", { label: "Admin email" }),
 
         body("admin_password")
             .notEmpty()
@@ -139,6 +133,8 @@ router.put(
     "/:id",
     authenticate,
     requirePermission("company.update", "company.manage"),
+    logoUpload.single("logo"),
+    handleUploadError,
     [
         body("company_name")
             .trim()
@@ -154,27 +150,13 @@ router.put(
             .isLength({ min: 2, max: 20 })
             .withMessage("Company code must be between 2 and 20 characters."),
 
-        body("email")
-            .trim()
-            .notEmpty()
-            .withMessage("Company email is required.")
-            .isEmail()
-            .withMessage("Please enter a valid email address."),
-
-        body("phone")
-            .optional({ checkFalsy: true })
-            .isLength({ min: 10, max: 20 })
-            .withMessage("Phone number must be between 10 and 20 characters."),
+        emailField("email", { label: "Company email" }),
+        phoneField("phone"),
 
         body("address")
             .optional({ checkFalsy: true })
             .isLength({ max: 500 })
             .withMessage("Address cannot exceed 500 characters."),
-
-        body("logo_url")
-            .optional({ checkFalsy: true })
-            .isURL()
-            .withMessage("Logo URL must be a valid URL."),
     ],
     updateCompany
 );
@@ -198,6 +180,28 @@ router.patch(
             .withMessage("is_active must be true or false."),
     ],
     updateCompanyStatus
+);
+
+
+/**
+ * ==========================================================
+ * Update Company Admin email / password
+ * PUT /api/v1/company/:id/admin-login
+ * ==========================================================
+ */
+router.put(
+    "/:id/admin-login",
+    authenticate,
+    authorize("SYSTEM_ADMIN"),
+    [
+        emailField("admin_email", { required: false, label: "Admin email" }),
+
+        body("admin_password")
+            .optional({ checkFalsy: true })
+            .isLength({ min: 8 })
+            .withMessage("Admin password must be at least 8 characters."),
+    ],
+    updateCompanyAdminLogin
 );
 
 

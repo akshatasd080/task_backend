@@ -51,9 +51,7 @@ router.post(
 
         body("description")
             .optional({ checkFalsy: true })
-            .trim()
-            .isLength({ max: 500 })
-            .withMessage("Description cannot exceed 500 characters."),
+            .trim(),
     ],
     createDepartment
 );
@@ -116,9 +114,7 @@ router.put(
 
         body("description")
             .optional({ checkFalsy: true })
-            .trim()
-            .isLength({ max: 500 })
-            .withMessage("Description cannot exceed 500 characters."),
+            .trim(),
     ],
     updateDepartment
 );

@@ -72,9 +72,7 @@ router.post(
 
         body("description")
             .optional({ checkFalsy: true })
-            .trim()
-            .isLength({ max: 500 })
-            .withMessage("Description cannot exceed 500 characters."),
+            .trim(),
 
         body("permission_ids")
             .optional()
@@ -130,9 +128,7 @@ router.put(
 
         body("description")
             .optional({ checkFalsy: true })
-            .trim()
-            .isLength({ max: 500 })
-            .withMessage("Description cannot exceed 500 characters."),
+            .trim(),
 
         body("is_active")
             .optional()

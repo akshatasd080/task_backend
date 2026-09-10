@@ -11,6 +11,38 @@ const ensureCompanyAccess = (user, companyId) => {
     }
 };
 
+const assertValidManager = async (companyId, managerId, excludeUserId = null) => {
+    if (managerId == null || managerId === "") return null;
+
+    const id = Number(managerId);
+    if (!id) {
+        throw Object.assign(new Error("Selected manager is invalid."), { statusCode: 400 });
+    }
+
+    if (excludeUserId && Number(excludeUserId) === id) {
+        throw Object.assign(new Error("A user cannot be their own manager."), { statusCode: 400 });
+    }
+
+    const result = await pool.query(
+        `
+        SELECT id FROM task_management.users
+        WHERE id = $1
+          AND company_id = $2
+          AND deleted_at IS NULL
+          AND is_active = TRUE
+        `,
+        [id, companyId]
+    );
+
+    if (result.rows.length === 0) {
+        throw Object.assign(new Error("Selected manager must be an active user in this company."), {
+            statusCode: 400,
+        });
+    }
+
+    return id;
+};
+
 const createUserService = async (data, loggedInUser) => {
     const companyId = isSystemAdmin(loggedInUser)
         ? Number(data.company_id)
@@ -59,6 +91,8 @@ const createUserService = async (data, loggedInUser) => {
         throw Object.assign(new Error("Email already exists in this company."), { statusCode: 400 });
     }
 
+    const validManagerId = await assertValidManager(companyId, manager_id);
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
@@ -79,7 +113,7 @@ const createUserService = async (data, loggedInUser) => {
             companyId,
             role_id,
             department_id || null,
-            manager_id || null,
+            validManagerId,
             first_name,
             last_name || null,
             email,
@@ -143,10 +177,14 @@ const getUsersService = async (loggedInUser, query = {}) => {
             u.employee_code, u.designation, u.is_active,
             u.last_login, u.created_at, u.updated_at,
             r.role_name,
-            d.department_name
+            d.department_name,
+            m.first_name AS manager_first_name,
+            m.last_name AS manager_last_name,
+            m.email AS manager_email
         FROM task_management.users u
         LEFT JOIN task_management.roles r ON r.id = u.role_id
         LEFT JOIN task_management.departments d ON d.id = u.department_id
+        LEFT JOIN task_management.users m ON m.id = u.manager_id
         WHERE u.deleted_at IS NULL
         ${companyFilter}
         ${searchFilter}
@@ -176,10 +214,14 @@ const getUserByIdService = async (userId, loggedInUser) => {
             u.employee_code, u.designation, u.profile_image, u.is_active,
             u.last_login, u.created_at, u.updated_at,
             r.role_name,
-            d.department_name
+            d.department_name,
+            m.first_name AS manager_first_name,
+            m.last_name AS manager_last_name,
+            m.email AS manager_email
         FROM task_management.users u
         LEFT JOIN task_management.roles r ON r.id = u.role_id
         LEFT JOIN task_management.departments d ON d.id = u.department_id
+        LEFT JOIN task_management.users m ON m.id = u.manager_id
         WHERE u.id = $1 AND u.deleted_at IS NULL
         `,
         [userId]
@@ -221,6 +263,10 @@ const updateUserService = async (userId, data, loggedInUser) => {
         }
     }
 
+    const nextManagerId = Object.prototype.hasOwnProperty.call(data, "manager_id")
+        ? await assertValidManager(existing.company_id, manager_id, userId)
+        : existing.manager_id;
+
     const result = await pool.query(
         `
         UPDATE task_management.users
@@ -230,7 +276,7 @@ const updateUserService = async (userId, data, loggedInUser) => {
             phone = COALESCE($3, phone),
             role_id = COALESCE($4, role_id),
             department_id = COALESCE($5, department_id),
-            manager_id = COALESCE($6, manager_id),
+            manager_id = $6,
             employee_code = COALESCE($7, employee_code),
             designation = COALESCE($8, designation),
             is_active = COALESCE($9, is_active),
@@ -248,7 +294,7 @@ const updateUserService = async (userId, data, loggedInUser) => {
             phone ?? null,
             role_id ?? null,
             department_id ?? null,
-            manager_id ?? null,
+            nextManagerId,
             employee_code ?? null,
             designation ?? null,
             typeof is_active === "boolean" ? is_active : null,
@@ -258,6 +304,73 @@ const updateUserService = async (userId, data, loggedInUser) => {
     );
 
     return result.rows[0];
+};
+
+const getMyTeamService = async (loggedInUser) => {
+    if (isSystemAdmin(loggedInUser)) {
+        return { members: [], tasks: [] };
+    }
+
+    const companyId = Number(loggedInUser.companyId);
+    const managerId = Number(loggedInUser.id);
+
+    const membersResult = await pool.query(
+        `
+        SELECT
+            u.id, u.company_id, u.role_id, u.manager_id,
+            u.first_name, u.last_name, u.email, u.phone,
+            u.employee_code, u.designation, u.is_active,
+            u.last_login, u.created_at, u.updated_at,
+            r.role_name,
+            COUNT(t.id)::int AS total_tasks,
+            COUNT(t.id) FILTER (
+                WHERE t.status NOT IN ('Completed', 'Cancelled')
+            )::int AS open_tasks,
+            COUNT(t.id) FILTER (WHERE t.status = 'Completed')::int AS completed_tasks,
+            COUNT(t.id) FILTER (
+                WHERE t.due_date < CURRENT_DATE
+                AND t.status NOT IN ('Completed', 'Cancelled')
+            )::int AS overdue_tasks
+        FROM task_management.users u
+        LEFT JOIN task_management.roles r ON r.id = u.role_id
+        LEFT JOIN task_management.tasks t
+            ON t.assigned_to = u.id AND t.is_active = TRUE
+        WHERE u.manager_id = $1
+          AND u.company_id = $2
+          AND u.deleted_at IS NULL
+        GROUP BY u.id, r.role_name
+        ORDER BY u.first_name ASC, u.last_name ASC
+        `,
+        [managerId, companyId]
+    );
+
+    const tasksResult = await pool.query(
+        `
+        SELECT
+            t.id, t.title, t.status, t.priority, t.due_date,
+            t.assigned_to, t.project_id, t.updated_at, t.created_at,
+            p.project_name,
+            u.first_name AS assigned_to_first_name,
+            u.last_name AS assigned_to_last_name
+        FROM task_management.tasks t
+        INNER JOIN task_management.users u ON u.id = t.assigned_to
+        LEFT JOIN task_management.projects p ON p.id = t.project_id
+        WHERE u.manager_id = $1
+          AND u.company_id = $2
+          AND u.deleted_at IS NULL
+          AND t.is_active = TRUE
+        ORDER BY
+            CASE WHEN t.status IN ('Completed', 'Cancelled') THEN 1 ELSE 0 END,
+            t.due_date ASC NULLS LAST,
+            t.updated_at DESC
+        `,
+        [managerId, companyId]
+    );
+
+    return {
+        members: membersResult.rows,
+        tasks: tasksResult.rows,
+    };
 };
 
 const deleteUserService = async (userId, loggedInUser) => {
@@ -289,4 +402,5 @@ module.exports = {
     getUserByIdService,
     updateUserService,
     deleteUserService,
+    getMyTeamService,
 };

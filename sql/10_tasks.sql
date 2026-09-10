@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS task_management.tasks (
 
     priority VARCHAR(20) DEFAULT 'Medium',
 
-    status VARCHAR(30) DEFAULT 'Todo',
+    status VARCHAR(30) DEFAULT 'Backlog',
 
     progress INTEGER DEFAULT 0,
 
@@ -73,6 +73,16 @@ CREATE TABLE IF NOT EXISTS task_management.tasks (
         CHECK (priority IN ('Low','Medium','High','Critical')),
 
     CONSTRAINT chk_status
-        CHECK (status IN ('Todo','In Progress','Review','Completed','Cancelled'))
+        CHECK (status IN (
+            'Backlog',
+            'Todo',
+            'In Progress',
+            'On Hold',
+            'Blocked',
+            'In Review',
+            'Changes Requested',
+            'Completed',
+            'Cancelled'
+        ))
 
 );

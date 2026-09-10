@@ -6,6 +6,7 @@ const {
     getUserByIdService,
     updateUserService,
     deleteUserService,
+    getMyTeamService,
 } = require("../services/user.service");
 
 const {
@@ -90,6 +91,42 @@ const getUsers = async (req, res) => {
 
         console.error("====================================");
         console.error("GET USERS ERROR");
+        console.error(error.message);
+        console.error("====================================");
+
+        return errorResponse(
+            res,
+            error.message,
+            error.statusCode || 500
+        );
+
+    }
+
+};
+
+
+/**
+ * ==========================================================
+ * Get My Team (reportees + their tasks)
+ * ==========================================================
+ */
+const getMyTeam = async (req, res) => {
+
+    try {
+
+        const team = await getMyTeamService(req.user);
+
+        return successResponse(
+            res,
+            "Team fetched successfully.",
+            team,
+            200
+        );
+
+    } catch (error) {
+
+        console.error("====================================");
+        console.error("GET MY TEAM ERROR");
         console.error(error.message);
         console.error("====================================");
 
@@ -246,4 +283,5 @@ module.exports = {
     getUserById,
     updateUser,
     deleteUser,
+    getMyTeam,
 };

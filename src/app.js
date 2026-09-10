@@ -13,6 +13,7 @@ const companyRoutes = require("./routes/company.routes");
 const departmentRoutes = require("./routes/department.routes");
 const userRoutes = require("./routes/user.routes");
 const roleRoutes = require("./routes/role.routes");
+const designationRoutes = require("./routes/designation.routes");
 const projectRoutes = require("./routes/project.routes");
 const taskRoutes = require("./routes/task.routes");
 const notificationRoutes = require("./routes/notification.routes");
@@ -29,7 +30,9 @@ app.use(express.json());
 
 app.use(cors());
 
-app.use(helmet());
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
 
 app.use(morgan("dev"));
 
@@ -71,6 +74,8 @@ app.use("/api/v1/department", departmentRoutes);
 app.use("/api/v1/users", userRoutes);
 
 app.use("/api/v1/roles", roleRoutes);
+
+app.use("/api/v1/designations", designationRoutes);
 
 app.use("/api/v1/projects", projectRoutes);
 

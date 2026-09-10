@@ -1,6 +1,10 @@
 const { verifyToken } = require("../config/jwt");
 const { errorResponse } = require("../utils/response");
-const { getPermissionsByRoleId } = require("../utils/helpers");
+const {
+    getPermissionsByRoleId,
+    getCompanyUserAccess,
+    assertCompanyUserCanAccess,
+} = require("../utils/helpers");
 const pool = require("../config/db");
 const { SUPER_ADMIN_PERMISSIONS } = require("../utils/companyOnboard");
 
@@ -48,6 +52,9 @@ const authenticate = async (req, res, next) => {
             return next();
         }
 
+        const access = await getCompanyUserAccess(decoded.id);
+        assertCompanyUserCanAccess(access);
+
         if (decoded.roleId) {
             const roleResult = await pool.query(
                 `
@@ -68,7 +75,11 @@ const authenticate = async (req, res, next) => {
 
         return next();
     } catch (error) {
-        return errorResponse(res, "Invalid or expired token.", 401);
+        return errorResponse(
+            res,
+            error.statusCode ? error.message : "Invalid or expired token.",
+            error.statusCode || 401
+        );
     }
 };
 
