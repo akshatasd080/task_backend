@@ -36,6 +36,7 @@ const FILES = [
   "16_alter_for_crm.sql",
   "17_seed_permissions.sql",
   "18_seed_demo_company.sql",
+  "22_company_profile.sql",
   "99_seed.sql",
 ];
 

@@ -64,12 +64,14 @@ router.post(
             .withMessage("Company code must be between 2 and 20 characters."),
 
         emailField("email", { label: "Company email" }),
-        phoneField("phone"),
+        phoneField("phone", { required: true }),
 
         body("address")
-            .optional({ checkFalsy: true })
-            .isLength({ max: 500 })
-            .withMessage("Address cannot exceed 500 characters."),
+            .trim()
+            .notEmpty()
+            .withMessage("Address is required.")
+            .isLength({ max: 200 })
+            .withMessage("Address cannot exceed 200 characters."),
 
         emailField("admin_email", { label: "Admin email" }),
 
@@ -80,14 +82,16 @@ router.post(
             .withMessage("Admin password must be at least 8 characters."),
 
         body("admin_first_name")
-            .optional({ checkFalsy: true })
             .trim()
-            .isLength({ min: 1, max: 100 })
+            .notEmpty()
+            .withMessage("Admin first name is required.")
+            .isLength({ max: 100 })
             .withMessage("Admin first name is invalid."),
 
         body("admin_last_name")
-            .optional({ checkFalsy: true })
             .trim()
+            .notEmpty()
+            .withMessage("Admin last name is required.")
             .isLength({ max: 100 })
             .withMessage("Admin last name is invalid."),
     ],
@@ -154,9 +158,31 @@ router.put(
         phoneField("phone"),
 
         body("address")
+            .optional({ checkFalsy: true }),
+
+        body("country")
             .optional({ checkFalsy: true })
-            .isLength({ max: 500 })
-            .withMessage("Address cannot exceed 500 characters."),
+            .trim()
+            .isLength({ max: 80 })
+            .withMessage("Country is too long."),
+
+        body("state")
+            .optional({ checkFalsy: true })
+            .trim()
+            .isLength({ max: 80 })
+            .withMessage("State is too long."),
+
+        body("city")
+            .optional({ checkFalsy: true })
+            .trim()
+            .isLength({ max: 80 })
+            .withMessage("City is too long."),
+
+        body("pincode")
+            .optional({ checkFalsy: true })
+            .customSanitizer((value) => String(value ?? "").replace(/\D/g, "").slice(0, 10))
+            .isLength({ min: 4, max: 10 })
+            .withMessage("Enter a valid pincode."),
     ],
     updateCompany
 );

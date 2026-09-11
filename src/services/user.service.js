@@ -133,36 +133,84 @@ const getUsersService = async (loggedInUser, query = {}) => {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
     const offset = (page - 1) * limit;
-    const search = query.search ? `%${query.search}%` : null;
-
-    let companyFilter = "";
     const params = [];
+    const filters = ["u.deleted_at IS NULL"];
 
     if (!isSystemAdmin(loggedInUser)) {
         params.push(loggedInUser.companyId);
-        companyFilter = `AND u.company_id = $${params.length}`;
+        filters.push(`u.company_id = $${params.length}`);
     } else if (query.company_id) {
         params.push(Number(query.company_id));
-        companyFilter = `AND u.company_id = $${params.length}`;
+        filters.push(`u.company_id = $${params.length}`);
     }
 
-    let searchFilter = "";
-    if (search) {
-        params.push(search);
-        searchFilter = `AND (
+    if (query.search) {
+        params.push(`%${query.search}%`);
+        filters.push(`(
             u.first_name ILIKE $${params.length}
             OR u.last_name ILIKE $${params.length}
             OR u.email ILIKE $${params.length}
-        )`;
+            OR COALESCE(u.designation, '') ILIKE $${params.length}
+        )`);
     }
+
+    if (query.role_id) {
+        params.push(Number(query.role_id));
+        filters.push(`u.role_id = $${params.length}`);
+    } else if (query.role_group === "managers") {
+        filters.push(`r.role_name ILIKE '%manager%' AND r.role_name NOT ILIKE '%admin%'`);
+    } else if (query.role_group === "leads") {
+        filters.push(`r.role_name ILIKE '%lead%'`);
+    }
+
+    if (query.status === "active") {
+        filters.push("u.is_active = TRUE");
+    } else if (query.status === "inactive") {
+        filters.push("u.is_active = FALSE");
+    }
+
+    if (query.joined === "7d") {
+        filters.push("u.created_at >= NOW() - INTERVAL '7 days'");
+    } else if (query.joined === "30d") {
+        filters.push("u.created_at >= NOW() - INTERVAL '30 days'");
+    } else if (query.joined === "year") {
+        filters.push("u.created_at >= date_trunc('year', CURRENT_TIMESTAMP)");
+    }
+
+    const where = `WHERE ${filters.join(" AND ")}`;
+
+    const statsParams = [];
+    const statsFilters = ["u.deleted_at IS NULL"];
+    if (!isSystemAdmin(loggedInUser)) {
+        statsParams.push(loggedInUser.companyId);
+        statsFilters.push(`u.company_id = $${statsParams.length}`);
+    } else if (query.company_id) {
+        statsParams.push(Number(query.company_id));
+        statsFilters.push(`u.company_id = $${statsParams.length}`);
+    }
+
+    const statsResult = await pool.query(
+        `
+        SELECT
+            COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE u.is_active = TRUE)::int AS active,
+            COUNT(*) FILTER (
+                WHERE r.role_name ILIKE '%manager%' AND r.role_name NOT ILIKE '%admin%'
+            )::int AS managers,
+            COUNT(*) FILTER (WHERE r.role_name ILIKE '%lead%')::int AS team_leads
+        FROM task_management.users u
+        LEFT JOIN task_management.roles r ON r.id = u.role_id
+        WHERE ${statsFilters.join(" AND ")}
+        `,
+        statsParams
+    );
 
     const countResult = await pool.query(
         `
         SELECT COUNT(*)::int AS total
         FROM task_management.users u
-        WHERE u.deleted_at IS NULL
-        ${companyFilter}
-        ${searchFilter}
+        LEFT JOIN task_management.roles r ON r.id = u.role_id
+        ${where}
         `,
         params
     );
@@ -186,9 +234,7 @@ const getUsersService = async (loggedInUser, query = {}) => {
         LEFT JOIN task_management.roles r ON r.id = u.role_id
         LEFT JOIN task_management.departments d ON d.id = u.department_id
         LEFT JOIN task_management.users m ON m.id = u.manager_id
-        WHERE u.deleted_at IS NULL
-        ${companyFilter}
-        ${searchFilter}
+        ${where}
         ORDER BY u.id DESC
         LIMIT $${params.length - 1} OFFSET $${params.length}
         `,
@@ -197,6 +243,7 @@ const getUsersService = async (loggedInUser, query = {}) => {
 
     return {
         items: result.rows,
+        stats: statsResult.rows[0],
         pagination: {
             page,
             limit,

@@ -5,6 +5,7 @@ const {
     getProfileService,
     logoutService,
     changePasswordService,
+    updateProfileService,
 } = require("../services/auth.service");
 
 const {
@@ -198,10 +199,32 @@ const changePassword = async (req, res) => {
 
 };
 
+
+/**
+ * ==========================================================
+ * Update Logged-in User Profile
+ * ==========================================================
+ */
+const updateProfile = async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return errorResponse(res, errors.array()[0].msg, 400);
+        }
+
+        const profile = await updateProfileService(req.user, req.body, req.file);
+        return successResponse(res, "Profile updated successfully.", profile, 200);
+    } catch (error) {
+        console.error("UPDATE PROFILE ERROR", error.message);
+        return errorResponse(res, error.message, error.statusCode || 400);
+    }
+};
+
 module.exports = {
     login,
     getProfile,
     logout,
     changePassword,
+    updateProfile,
 };
 

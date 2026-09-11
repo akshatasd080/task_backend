@@ -110,6 +110,11 @@ const getProjectsService = async (loggedInUser, query = {}) => {
         filters.push(`p.status = $${params.length}`);
     }
 
+    if (query.created_by) {
+        params.push(Number(query.created_by));
+        filters.push(`p.created_by = $${params.length}`);
+    }
+
     if (query.search) {
         params.push(`%${query.search}%`);
         filters.push(`(p.project_name ILIKE $${params.length} OR p.project_code ILIKE $${params.length})`);
@@ -120,6 +125,37 @@ const getProjectsService = async (loggedInUser, query = {}) => {
     const countResult = await pool.query(
         `SELECT COUNT(*)::int AS total FROM task_management.projects p ${where}`,
         params
+    );
+
+    const sortMap = {
+        created_at: "p.created_at",
+        project_name: "p.project_name",
+        end_date: "p.end_date",
+        status: "p.status",
+    };
+    const sortBy = sortMap[query.sort_by] || "p.created_at";
+    const sortOrder = query.sort_order === "asc" ? "ASC" : "DESC";
+
+    const statsParams = [];
+    const statsFilters = ["is_active = TRUE"];
+    if (!isSystemAdmin(loggedInUser)) {
+        statsParams.push(loggedInUser.companyId);
+        statsFilters.push(`company_id = $${statsParams.length}`);
+    } else if (query.company_id) {
+        statsParams.push(Number(query.company_id));
+        statsFilters.push(`company_id = $${statsParams.length}`);
+    }
+    const statsResult = await pool.query(
+        `
+        SELECT
+            COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE status = 'Active')::int AS active,
+            COUNT(*) FILTER (WHERE status = 'Completed')::int AS completed,
+            COUNT(*) FILTER (WHERE status = 'On Hold')::int AS on_hold
+        FROM task_management.projects
+        WHERE ${statsFilters.join(" AND ")}
+        `,
+        statsParams
     );
 
     params.push(limit);
@@ -138,7 +174,7 @@ const getProjectsService = async (loggedInUser, query = {}) => {
         FROM task_management.projects p
         LEFT JOIN task_management.users u ON u.id = p.created_by
         ${where}
-        ORDER BY p.id DESC
+        ORDER BY ${sortBy} ${sortOrder} NULLS LAST, p.id DESC
         LIMIT $${params.length - 1} OFFSET $${params.length}
         `,
         params
@@ -146,6 +182,7 @@ const getProjectsService = async (loggedInUser, query = {}) => {
 
     return {
         items: result.rows,
+        stats: statsResult.rows[0],
         pagination: {
             page,
             limit,

@@ -186,7 +186,7 @@ const createTaskService = async (data, loggedInUser) => {
         newValue: title,
     });
 
-    if (Number(assigned_to) !== Number(loggedInUser.id)) {
+    if (Number(assigned_to) !== Number(loggedInUser.id) && data.notify_assignee !== false) {
         await createNotification({
             companyId,
             userId: assigned_to,

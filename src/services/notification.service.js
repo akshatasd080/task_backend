@@ -1,6 +1,11 @@
 const pool = require("../config/db");
 const { isSystemAdmin } = require("../utils/tenant");
 
+const TASK_TYPES = ["task_assigned", "status_changed", "task_reassigned", "task_completed"];
+const COMMENT_TYPES = ["comment_added"];
+
+const typeList = (values) => values.map((v) => `'${v}'`).join(", ");
+
 const getNotificationsService = async (loggedInUser, query = {}) => {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
@@ -18,23 +23,67 @@ const getNotificationsService = async (loggedInUser, query = {}) => {
         filters.push(`n.is_read = $${params.length}`);
     }
 
+    if (query.search) {
+        params.push(`%${query.search}%`);
+        filters.push(`(n.title ILIKE $${params.length} OR n.message ILIKE $${params.length})`);
+    }
+
+    if (query.category === "tasks") {
+        filters.push(`n.type IN (${typeList(TASK_TYPES)})`);
+    } else if (query.category === "comments") {
+        filters.push(`n.type IN (${typeList(COMMENT_TYPES)})`);
+    } else if (query.category === "projects") {
+        filters.push(`(n.type ILIKE 'project%' OR n.title ILIKE '%project%')`);
+    } else if (query.category === "team") {
+        filters.push(`(n.type ILIKE 'team%' OR n.title ILIKE '%team%' OR n.message ILIKE '%team%')`);
+    } else if (query.category === "system") {
+        filters.push(`(
+            n.type IS NULL
+            OR n.type IN ('info', 'system')
+            OR (
+                n.type NOT IN (${typeList([...TASK_TYPES, ...COMMENT_TYPES])})
+                AND n.type NOT ILIKE 'project%'
+                AND n.type NOT ILIKE 'team%'
+            )
+        )`);
+    }
+
+    if (query.joined === "7d") {
+        filters.push("n.created_at >= NOW() - INTERVAL '7 days'");
+    } else if (query.joined === "30d") {
+        filters.push("n.created_at >= NOW() - INTERVAL '30 days'");
+    } else if (query.joined === "year") {
+        filters.push("n.created_at >= date_trunc('year', CURRENT_TIMESTAMP)");
+    }
+
     const where = `WHERE ${filters.join(" AND ")}`;
+
+    const statsParams = [loggedInUser.id];
+    const statsFilters = ["user_id = $1"];
+    if (!isSystemAdmin(loggedInUser)) {
+        statsParams.push(loggedInUser.companyId);
+        statsFilters.push(`company_id = $${statsParams.length}`);
+    }
+
+    const statsResult = await pool.query(
+        `
+        SELECT
+            COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE is_read = FALSE)::int AS unread,
+            COUNT(*) FILTER (WHERE type IN (${typeList(TASK_TYPES)}))::int AS task_updates,
+            COUNT(*) FILTER (WHERE type IN (${typeList(COMMENT_TYPES)}))::int AS comments,
+            COUNT(*) FILTER (
+                WHERE type ILIKE 'team%' OR title ILIKE '%team%' OR message ILIKE '%team%'
+            )::int AS team_updates
+        FROM task_management.notifications
+        WHERE ${statsFilters.join(" AND ")}
+        `,
+        statsParams
+    );
 
     const countResult = await pool.query(
         `SELECT COUNT(*)::int AS total FROM task_management.notifications n ${where}`,
         params
-    );
-
-    const unreadResult = await pool.query(
-        `
-        SELECT COUNT(*)::int AS total
-        FROM task_management.notifications n
-        WHERE n.user_id = $1 AND n.is_read = FALSE
-        ${!isSystemAdmin(loggedInUser) ? "AND n.company_id = $2" : ""}
-        `,
-        isSystemAdmin(loggedInUser)
-            ? [loggedInUser.id]
-            : [loggedInUser.id, loggedInUser.companyId]
     );
 
     params.push(limit);
@@ -51,9 +100,12 @@ const getNotificationsService = async (loggedInUser, query = {}) => {
         params
     );
 
+    const stats = statsResult.rows[0] || {};
+
     return {
         items: result.rows,
-        unread_count: unreadResult.rows[0].total,
+        unread_count: stats.unread || 0,
+        stats,
         pagination: {
             page,
             limit,

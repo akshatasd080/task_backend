@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const path = require("path");
 const pool = require("../config/db");
 const { generateToken } = require("../config/jwt");
 const {
@@ -289,9 +290,66 @@ const changePasswordService = async (
     };
 };
 
+const updateProfileService = async (loggedInUser, data = {}, file = null) => {
+    const firstName = data.first_name != null ? String(data.first_name).trim() : null;
+    const lastName = data.last_name != null ? String(data.last_name).trim() : null;
+    const phone = data.phone != null ? String(data.phone).replace(/\D/g, "").slice(0, 10) : null;
+
+    if (firstName !== null && !firstName) {
+        throw Object.assign(new Error("First name is required."), { statusCode: 400 });
+    }
+    if (phone !== null && phone && phone.length !== 10) {
+        throw Object.assign(new Error("Phone number must be exactly 10 digits."), { statusCode: 400 });
+    }
+
+    let imagePath = null;
+    if (file?.filename) {
+        const companyId = loggedInUser.companyId || "system";
+        imagePath = path.posix.join("uploads", String(companyId), file.filename);
+    }
+
+    if (loggedInUser.userType === "SYSTEM_ADMIN") {
+        const result = await pool.query(
+            `
+            UPDATE task_management.system_admins
+            SET
+                first_name = COALESCE($1, first_name),
+                last_name = COALESCE($2, last_name),
+                phone = COALESCE($3, phone),
+                profile_image = COALESCE($4, profile_image),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $5
+            RETURNING *
+            `,
+            [firstName, lastName, phone || null, imagePath, loggedInUser.id]
+        );
+        if (result.rows.length === 0) throw new Error("User not found.");
+        return getProfileService(loggedInUser);
+    }
+
+    const result = await pool.query(
+        `
+        UPDATE task_management.users
+        SET
+            first_name = COALESCE($1, first_name),
+            last_name = COALESCE($2, last_name),
+            phone = COALESCE($3, phone),
+            profile_image = COALESCE($4, profile_image),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $5 AND deleted_at IS NULL
+        RETURNING *
+        `,
+        [firstName, lastName, phone === "" ? null : phone, imagePath, loggedInUser.id]
+    );
+
+    if (result.rows.length === 0) throw new Error("User not found.");
+    return getProfileService(loggedInUser);
+};
+
 module.exports = {
     loginService,
     getProfileService,
     logoutService,
     changePasswordService,
+    updateProfileService,
 };

@@ -6,6 +6,37 @@ const {
     deleteUploadedFile,
 } = require("../middleware/upload.middleware");
 
+const COMPANY_FIELDS = `
+    id,
+    company_name,
+    company_code,
+    email,
+    phone,
+    address,
+    country,
+    state,
+    city,
+    pincode,
+    logo_url,
+    notify_all_users,
+    allow_self_registration,
+    show_in_reports,
+    is_active,
+    created_by,
+    updated_by,
+    created_at,
+    updated_at
+`;
+
+const asBool = (value, fallback = false) => {
+    if (value === undefined || value === null || value === "") return fallback;
+    if (typeof value === "boolean") return value;
+    const text = String(value).trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(text)) return true;
+    if (["false", "0", "no", "off"].includes(text)) return false;
+    return fallback;
+};
+
 const getCompanyAdminUser = async (companyId) => {
     const result = await pool.query(
         `
@@ -236,7 +267,14 @@ const getAllCompaniesService = async () => {
             c.email,
             c.phone,
             c.address,
+            c.country,
+            c.state,
+            c.city,
+            c.pincode,
             c.logo_url,
+            c.notify_all_users,
+            c.allow_self_registration,
+            c.show_in_reports,
             c.is_active,
             c.created_by,
             c.updated_by,
@@ -277,18 +315,7 @@ const getCompanyByIdService = async (companyId, loggedInUser = null) => {
     const result = await pool.query(
         `
         SELECT
-            id,
-            company_name,
-            company_code,
-            email,
-            phone,
-            address,
-            logo_url,
-            is_active,
-            created_by,
-            updated_by,
-            created_at,
-            updated_at
+            ${COMPANY_FIELDS}
         FROM task_management.companies
         WHERE id = $1
         AND deleted_at IS NULL
@@ -344,7 +371,16 @@ const updateCompanyService = async (
         email,
         phone,
         address,
+        country,
+        state,
+        city,
+        pincode,
     } = companyData;
+
+    const notifyAllUsers = asBool(companyData.notify_all_users, true);
+    const allowSelfRegistration = asBool(companyData.allow_self_registration, false);
+    const showInReports = asBool(companyData.show_in_reports, true);
+    const removeLogo = asBool(companyData.remove_logo, false);
 
     // ======================================================
     // Check Company Exists
@@ -372,6 +408,9 @@ const updateCompanyService = async (
         if (existing.logo_url && existing.logo_url !== nextLogo) {
             deleteUploadedFile(existing.logo_url);
         }
+    } else if (removeLogo && existing.logo_url) {
+        deleteUploadedFile(existing.logo_url);
+        nextLogo = null;
     }
 
     // ======================================================
@@ -431,23 +470,19 @@ const updateCompanyService = async (
             email = $3,
             phone = $4,
             address = $5,
-            logo_url = $6,
-            updated_by = $7,
+            country = $6,
+            state = $7,
+            city = $8,
+            pincode = $9,
+            logo_url = $10,
+            notify_all_users = $11,
+            allow_self_registration = $12,
+            show_in_reports = $13,
+            updated_by = $14,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $8
+        WHERE id = $15
         RETURNING
-            id,
-            company_name,
-            company_code,
-            email,
-            phone,
-            address,
-            logo_url,
-            is_active,
-            created_by,
-            updated_by,
-            created_at,
-            updated_at
+            ${COMPANY_FIELDS}
         `,
         [
             company_name,
@@ -455,7 +490,14 @@ const updateCompanyService = async (
             email,
             phone || null,
             address || null,
+            country ? String(country).trim() : null,
+            state ? String(state).trim() : null,
+            city ? String(city).trim() : null,
+            pincode ? String(pincode).replace(/\D/g, "").slice(0, 10) || null : null,
             nextLogo,
+            notifyAllUsers,
+            allowSelfRegistration,
+            showInReports,
             loggedInUserId,
             companyId,
         ]

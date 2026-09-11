@@ -38,7 +38,11 @@ router.post(
             .withMessage("Designation name must be between 2 and 100 characters."),
         body("description")
             .optional({ checkFalsy: true })
-            .trim(),
+            .trim()
+            .isLength({ max: 500 })
+            .withMessage("Description cannot exceed 500 characters."),
+        body("is_active")
+            .optional(),
     ],
     createDesignation
 );
@@ -63,7 +67,11 @@ router.put(
             .withMessage("Designation name must be between 2 and 100 characters."),
         body("description")
             .optional({ checkFalsy: true })
-            .trim(),
+            .trim()
+            .isLength({ max: 500 })
+            .withMessage("Description cannot exceed 500 characters."),
+        body("is_active")
+            .optional(),
     ],
     updateDesignation
 );

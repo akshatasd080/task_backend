@@ -7,11 +7,17 @@ const {
     getProfile,
     logout,
     changePassword,
+    updateProfile,
 } = require("../controllers/auth.controller");
 
 const {
     authenticate,
 } = require("../middleware/auth.middleware");
+
+const {
+    upload,
+    handleUploadError,
+} = require("../middleware/upload.middleware");
 
 const {
     body,
@@ -51,6 +57,25 @@ router.get(
     "/profile",
     authenticate,
     getProfile
+);
+
+router.put(
+    "/profile",
+    authenticate,
+    upload.single("profile_image"),
+    handleUploadError,
+    [
+        body("first_name")
+            .optional()
+            .trim()
+            .notEmpty()
+            .withMessage("First name is required."),
+        body("phone")
+            .optional({ checkFalsy: true })
+            .matches(/^\d{10}$/)
+            .withMessage("Phone number must be exactly 10 digits."),
+    ],
+    updateProfile
 );
 
 

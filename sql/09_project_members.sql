@@ -27,3 +27,5 @@ CREATE TABLE IF NOT EXISTS task_management.project_members (
         UNIQUE(project_id, user_id)
 
 );
+
+

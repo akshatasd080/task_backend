@@ -22,15 +22,104 @@ const getPermissionsService = async () => {
 };
 
 const getRolesService = async (loggedInUser, query = {}) => {
+    const page = Math.max(1, Number(query.page) || 1);
+    const requestedLimit = query.limit == null || query.limit === "" ? null : Number(query.limit);
+    const paginate = requestedLimit != null || Boolean(query.page);
+    const limit = paginate ? Math.min(100, Math.max(1, requestedLimit || 10)) : null;
+
     const params = [];
-    let companyFilter = "";
+    const companyFilters = ["r.deleted_at IS NULL"];
 
     if (!isSystemAdmin(loggedInUser)) {
         params.push(loggedInUser.companyId);
-        companyFilter = `AND r.company_id = $${params.length}`;
+        companyFilters.push(`r.company_id = $${params.length}`);
     } else if (query.company_id) {
         params.push(Number(query.company_id));
-        companyFilter = `AND r.company_id = $${params.length}`;
+        companyFilters.push(`r.company_id = $${params.length}`);
+    }
+
+    const companyWhere = `WHERE ${companyFilters.join(" AND ")}`;
+
+    const statsResult = await pool.query(
+        `
+        SELECT
+            COUNT(*)::int AS total_roles,
+            COALESCE(SUM(pc.permission_count), 0)::int AS total_permissions,
+            MAX(r.updated_at) AS last_updated,
+            (
+                SELECT r2.role_name
+                FROM task_management.roles r2
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*)::int AS permission_count
+                    FROM task_management.role_permissions rp
+                    WHERE rp.role_id = r2.id AND rp.is_active = TRUE
+                ) x ON TRUE
+                ${companyWhere.replaceAll("r.", "r2.")}
+                ORDER BY x.permission_count DESC, r2.id ASC
+                LIMIT 1
+            ) AS most_privileged_role,
+            (
+                SELECT r2.description
+                FROM task_management.roles r2
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*)::int AS permission_count
+                    FROM task_management.role_permissions rp
+                    WHERE rp.role_id = r2.id AND rp.is_active = TRUE
+                ) x ON TRUE
+                ${companyWhere.replaceAll("r.", "r2.")}
+                ORDER BY x.permission_count DESC, r2.id ASC
+                LIMIT 1
+            ) AS most_privileged_description
+        FROM task_management.roles r
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS permission_count
+            FROM task_management.role_permissions rp
+            WHERE rp.role_id = r.id AND rp.is_active = TRUE
+        ) pc ON TRUE
+        ${companyWhere}
+        `,
+        params
+    );
+
+    const filters = [...companyFilters];
+    const listParams = [...params];
+
+    if (query.search) {
+        listParams.push(`%${String(query.search).trim()}%`);
+        filters.push(`(
+            r.role_name ILIKE $${listParams.length}
+            OR COALESCE(r.description, '') ILIKE $${listParams.length}
+        )`);
+    }
+
+    if (query.status === "active") {
+        filters.push("r.is_active = TRUE");
+    } else if (query.status === "inactive") {
+        filters.push("r.is_active = FALSE");
+    } else if (query.status === "system") {
+        filters.push("r.is_system = TRUE");
+    } else if (query.status === "custom") {
+        filters.push("r.is_system = FALSE");
+    }
+
+    const where = `WHERE ${filters.join(" AND ")}`;
+
+    const countResult = await pool.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM task_management.roles r
+        ${where}
+        `,
+        listParams
+    );
+    const total = countResult.rows[0]?.total || 0;
+
+    let paging = "";
+    const pageParams = [...listParams];
+    if (limit != null) {
+        pageParams.push(limit);
+        pageParams.push((page - 1) * limit);
+        paging = `LIMIT $${pageParams.length - 1} OFFSET $${pageParams.length}`;
     }
 
     const result = await pool.query(
@@ -38,6 +127,8 @@ const getRolesService = async (loggedInUser, query = {}) => {
         SELECT
             r.id, r.company_id, r.role_name, r.description,
             r.is_system, r.is_active, r.created_at, r.updated_at,
+            COUNT(p.id) FILTER (WHERE p.id IS NOT NULL)::int AS permission_count,
+            COALESCE(users.user_count, 0) AS user_count,
             COALESCE(
                 json_agg(
                     json_build_object(
@@ -52,15 +143,39 @@ const getRolesService = async (loggedInUser, query = {}) => {
         LEFT JOIN task_management.role_permissions rp
             ON rp.role_id = r.id AND rp.is_active = TRUE
         LEFT JOIN task_management.permissions p ON p.id = rp.permission_id
-        WHERE r.deleted_at IS NULL
-        ${companyFilter}
-        GROUP BY r.id
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS user_count
+            FROM task_management.users u
+            WHERE u.role_id = r.id AND u.deleted_at IS NULL
+        ) users ON TRUE
+        ${where}
+        GROUP BY r.id, users.user_count
         ORDER BY r.id ASC
+        ${paging}
         `,
-        params
+        pageParams
     );
 
-    return result.rows;
+    const items = result.rows;
+    const effectiveLimit = limit || Math.max(items.length, total, 1);
+    const stats = statsResult.rows[0] || {};
+
+    return {
+        items,
+        pagination: {
+            page: limit == null ? 1 : page,
+            limit: effectiveLimit,
+            total,
+            totalPages: limit == null ? 1 : Math.max(1, Math.ceil(total / effectiveLimit)),
+        },
+        stats: {
+            total_roles: stats.total_roles || 0,
+            total_permissions: stats.total_permissions || 0,
+            most_privileged_role: stats.most_privileged_role || "—",
+            most_privileged_description: stats.most_privileged_description || "",
+            last_updated: stats.last_updated || null,
+        },
+    };
 };
 
 const getRoleByIdService = async (roleId, loggedInUser) => {
@@ -108,16 +223,20 @@ const createRoleService = async (data, loggedInUser) => {
 
     ensureCompanyAccess(loggedInUser, companyId);
 
-    const { role_name, description, permission_ids = [] } = data;
+    const { role_name, description, permission_ids = [], is_active } = data;
+    const nextActive =
+        is_active === undefined || is_active === null || is_active === ""
+            ? true
+            : is_active === true || String(is_active).toLowerCase() === "true";
 
     const result = await pool.query(
         `
         INSERT INTO task_management.roles
-        (company_id, role_name, description, created_by, updated_by)
-        VALUES ($1, $2, $3, $4, $4)
+        (company_id, role_name, description, is_active, created_by, updated_by)
+        VALUES ($1, $2, $3, $4, $5, $5)
         RETURNING *
         `,
-        [companyId, role_name, description || null, loggedInUser.id]
+        [companyId, role_name, description || null, nextActive, loggedInUser.id]
     );
 
     const role = result.rows[0];
