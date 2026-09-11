@@ -1,6 +1,7 @@
 const bcrypt = require("bcrypt");
 const pool = require("../config/db");
 const { isSystemAdmin } = require("../utils/tenant");
+const { attachWorkflow } = require("../utils/taskWorkflow");
 
 const ensureCompanyAccess = (user, companyId) => {
     if (isSystemAdmin(user)) return;
@@ -369,7 +370,7 @@ const getMyTeamService = async (loggedInUser) => {
 
     return {
         members: membersResult.rows,
-        tasks: tasksResult.rows,
+        tasks: tasksResult.rows.map((row) => attachWorkflow(row, loggedInUser)),
     };
 };
 

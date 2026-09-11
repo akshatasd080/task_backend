@@ -181,7 +181,7 @@ router.delete(
 router.post(
     "/:id/assign",
     authenticate,
-    requirePermission("task.assign"),
+    requirePermission("task.assign", "task.change_status", "task.view"),
     [
         body("assigned_to")
             .notEmpty()

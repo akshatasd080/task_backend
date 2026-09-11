@@ -41,8 +41,9 @@ VALUES
     ('task.update', 'task', 'Update tasks'),
     ('task.delete', 'task', 'Delete tasks'),
     ('task.assign', 'task', 'Assign / reassign tasks'),
-    ('task.change_status', 'task', 'Change task status'),
+    ('task.change_status', 'task', 'Change task status (own assigned stage only)'),
     ('task.change_priority', 'task', 'Change task priority'),
+    ('task.override_status', 'task', 'Override assignee-owned status workflow'),
     ('view_all_company_tasks', 'task', 'View all company tasks'),
 
     ('comment.create', 'comment', 'Add comments'),

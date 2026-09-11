@@ -2,19 +2,14 @@ const pool = require("../config/db");
 const path = require("path");
 const { isSystemAdmin } = require("../utils/tenant");
 const { logActivity, createNotification, teamTaskAccessSql } = require("../utils/helpers");
+const {
+    VALID_STATUSES,
+    attachWorkflow,
+    assertCanChangeStatus,
+    assertCanAssignTask,
+} = require("../utils/taskWorkflow");
 
 const VALID_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
-const VALID_STATUSES = [
-    "Backlog",
-    "Todo",
-    "In Progress",
-    "On Hold",
-    "Blocked",
-    "In Review",
-    "Changes Requested",
-    "Completed",
-    "Cancelled",
-];
 
 const ensureCompanyAccess = (user, companyId) => {
     if (isSystemAdmin(user)) return;
@@ -71,6 +66,22 @@ const getTaskRow = async (taskId) => {
     }
 
     return result.rows[0];
+};
+
+const userLabel = async (userId) => {
+    if (!userId) return "Unassigned";
+    const result = await pool.query(
+        `
+        SELECT first_name, last_name, email
+        FROM task_management.users
+        WHERE id = $1
+        `,
+        [userId]
+    );
+    const row = result.rows[0];
+    if (!row) return `User #${userId}`;
+    const name = `${row.first_name || ""} ${row.last_name || ""}`.trim();
+    return name || row.email || `User #${userId}`;
 };
 
 const createTaskService = async (data, loggedInUser) => {
@@ -191,8 +202,8 @@ const createTaskService = async (data, loggedInUser) => {
             moduleName: "task",
             action: "assigned",
             referenceId: task.id,
-            description: `Task assigned`,
-            newValue: String(assigned_to),
+            description: `Assigned to ${await userLabel(assigned_to)}`,
+            newValue: await userLabel(assigned_to),
         });
     }
 
@@ -299,7 +310,7 @@ const getTasksService = async (loggedInUser, query = {}) => {
     );
 
     return {
-        items: result.rows,
+        items: result.rows.map((row) => attachWorkflow(row, loggedInUser)),
         pagination: {
             page,
             limit,
@@ -318,7 +329,7 @@ const getTaskByIdService = async (taskId, loggedInUser) => {
         });
     }
 
-    return task;
+    return attachWorkflow(task, loggedInUser);
 };
 
 const updateTaskService = async (taskId, data, loggedInUser) => {
@@ -351,6 +362,10 @@ const updateTaskService = async (taskId, data, loggedInUser) => {
 
     if (status && !VALID_STATUSES.includes(status)) {
         throw Object.assign(new Error("Invalid status."), { statusCode: 400 });
+    }
+
+    if (status && status !== existing.status) {
+        assertCanChangeStatus(loggedInUser, existing, status);
     }
 
     const completedAt =
@@ -414,9 +429,12 @@ const updateTaskService = async (taskId, data, loggedInUser) => {
                 companyId: existing.company_id,
                 userId: loggedInUser.id,
                 moduleName: "task",
-                action: `${field}_changed`,
+                action: field === "status" && newVal === "Completed" ? "completed" : `${field}_changed`,
                 referenceId: taskId,
-                description: `${field} changed`,
+                description:
+                    field === "status"
+                        ? `Status changed from ${oldVal} to ${newVal}`
+                        : `${field} changed`,
                 oldValue: oldVal,
                 newValue: newVal,
             });
@@ -470,6 +488,7 @@ const deleteTaskService = async (taskId, loggedInUser) => {
 
 const assignTaskService = async (taskId, assignedTo, loggedInUser) => {
     const existing = await getTaskByIdService(taskId, loggedInUser);
+    assertCanAssignTask(loggedInUser, existing);
 
     const assigneeCheck = await pool.query(
         `
@@ -486,6 +505,12 @@ const assignTaskService = async (taskId, assignedTo, loggedInUser) => {
     }
 
     const oldAssignee = existing.assigned_to;
+    if (Number(oldAssignee) === Number(assignedTo)) {
+        return existing;
+    }
+
+    const fromName = await userLabel(oldAssignee);
+    const toName = await userLabel(assignedTo);
 
     await pool.query(
         `
@@ -493,7 +518,7 @@ const assignTaskService = async (taskId, assignedTo, loggedInUser) => {
         SET assigned_to = $1, assigned_by = $2, updated_at = CURRENT_TIMESTAMP
         WHERE id = $3
         `,
-        [assignedTo, loggedInUser.id, taskId]
+        [assignedTo, loggedInUser.id, Number(taskId)]
     );
 
     await logActivity({
@@ -502,19 +527,36 @@ const assignTaskService = async (taskId, assignedTo, loggedInUser) => {
         moduleName: "task",
         action: oldAssignee ? "reassigned" : "assigned",
         referenceId: taskId,
-        description: oldAssignee ? "Task reassigned" : "Task assigned",
-        oldValue: String(oldAssignee),
-        newValue: String(assignedTo),
+        description: oldAssignee
+            ? `Reassigned from ${fromName} to ${toName}`
+            : `Assigned to ${toName}`,
+        oldValue: fromName,
+        newValue: toName,
     });
 
     await createNotification({
         companyId: existing.company_id,
         userId: assignedTo,
         title: oldAssignee ? "Task reassigned to you" : "New task assigned",
-        message: `Task "${existing.title}" has been assigned to you`,
+        message: `Task "${existing.title}" has been assigned to you. You now own the current stage.`,
         type: oldAssignee ? "task_reassigned" : "task_assigned",
         relatedTaskId: taskId,
     });
+
+    if (
+        oldAssignee &&
+        Number(oldAssignee) !== Number(loggedInUser.id) &&
+        Number(oldAssignee) !== Number(assignedTo)
+    ) {
+        await createNotification({
+            companyId: existing.company_id,
+            userId: oldAssignee,
+            title: "Task reassigned",
+            message: `Task "${existing.title}" was reassigned to ${toName}`,
+            type: "task_reassigned",
+            relatedTaskId: taskId,
+        });
+    }
 
     return getTaskByIdService(taskId, loggedInUser);
 };
@@ -525,17 +567,10 @@ const changeStatusService = async (taskId, status, loggedInUser) => {
     }
 
     const existing = await getTaskByIdService(taskId, loggedInUser);
-    const isManagerOfAssignee =
-        Number(existing.assigned_to_manager_id) === Number(loggedInUser.id);
+    assertCanChangeStatus(loggedInUser, existing, status);
 
-    if (
-        !hasPermission(loggedInUser, "task.change_status") &&
-        !isSystemAdmin(loggedInUser) &&
-        !isManagerOfAssignee
-    ) {
-        throw Object.assign(new Error("You do not have permission to perform this action."), {
-            statusCode: 403,
-        });
+    if (status === existing.status) {
+        return existing;
     }
 
     // Employees can change status on tasks they can view (assigned/created)
@@ -543,21 +578,24 @@ const changeStatusService = async (taskId, status, loggedInUser) => {
         `
         UPDATE task_management.tasks
         SET
-            status = $1,
-            completed_at = CASE WHEN $1 = 'Completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
+            status = $1::varchar,
+            completed_at = CASE
+                WHEN $3::boolean THEN CURRENT_TIMESTAMP
+                ELSE NULL
+            END,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
         `,
-        [status, taskId]
+        [status, Number(taskId), status === "Completed"]
     );
 
     await logActivity({
         companyId: existing.company_id,
         userId: loggedInUser.id,
         moduleName: "task",
-        action: "status_changed",
+        action: status === "Completed" ? "completed" : "status_changed",
         referenceId: taskId,
-        description: "Status changed",
+        description: `Status changed from ${existing.status} to ${status}`,
         oldValue: existing.status,
         newValue: status,
     });
@@ -583,6 +621,21 @@ const changeStatusService = async (taskId, status, loggedInUser) => {
             userId: existing.assigned_to_manager_id,
             title: "Team member task update",
             message: `Task "${existing.title}" for ${existing.assigned_to_first_name || "a team member"} is now ${status}`,
+            type: "status_changed",
+            relatedTaskId: taskId,
+        });
+    }
+
+    if (
+        existing.created_by &&
+        Number(existing.created_by) !== Number(loggedInUser.id) &&
+        status !== "Completed"
+    ) {
+        await createNotification({
+            companyId: existing.company_id,
+            userId: existing.created_by,
+            title: "Task status updated",
+            message: `Task "${existing.title}" moved from ${existing.status} to ${status}`,
             type: "status_changed",
             relatedTaskId: taskId,
         });
