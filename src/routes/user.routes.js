@@ -76,8 +76,9 @@ router.post(
             .withMessage("First name must be between 2 and 100 characters."),
 
         body("last_name")
-            .optional({ checkFalsy: true })
             .trim()
+            .notEmpty()
+            .withMessage("Last name is required.")
             .isLength({ max: 100 })
             .withMessage("Last name cannot exceed 100 characters."),
 
@@ -95,7 +96,7 @@ router.post(
             .isInt({ min: 1 })
             .withMessage("Role ID must be a valid integer."),
 
-        phoneField("phone"),
+        phoneField("phone", { required: true }),
 
         body("department_id")
             .optional({ checkFalsy: true })
